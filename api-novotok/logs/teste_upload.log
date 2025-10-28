@@ -1,0 +1,22 @@
+[2025-07-10 20:59:12] Configurações PHP: {"upload_max_filesize":"2M","post_max_size":"8M","memory_limit":"256M","max_execution_time":"300","max_input_time":"60"}
+[2025-07-10 20:59:12] Iniciando teste de upload
+[2025-07-10 20:59:12] POST: []
+[2025-07-10 20:59:12] FILES: []
+[2025-07-10 21:00:44] Configurações PHP: {"upload_max_filesize":"2M","post_max_size":"8M","memory_limit":"256M","max_execution_time":"300","max_input_time":"60"}
+[2025-07-10 21:00:44] Iniciando teste de upload
+[2025-07-10 21:00:44] POST: []
+[2025-07-10 21:00:44] FILES: []
+[2025-07-10 21:00:44] Erro no upload: Erro desconhecido (Nenhum arquivo enviado)
+[2025-07-11 11:58:49] Configurações PHP: {"upload_max_filesize":"100M","post_max_size":"8M","memory_limit":"256M","max_execution_time":"300","max_input_time":"60"}
+[2025-07-11 11:58:49] Iniciando teste de upload
+[2025-07-11 11:58:49] POST: []
+[2025-07-11 11:58:49] FILES: []
+[2025-07-11 12:00:21] Configurações PHP: {"upload_max_filesize":"100M","post_max_size":"8M","memory_limit":"256M","max_execution_time":"300","max_input_time":"60"}
+[2025-07-11 12:00:21] Iniciando teste de upload
+[2025-07-11 12:00:21] POST: []
+[2025-07-11 12:00:21] FILES: []
+[2025-07-11 12:00:21] Erro no upload: Erro desconhecido (Nenhum arquivo enviado)
+[2025-07-11 12:00:56] Configurações PHP: {"upload_max_filesize":"100M","post_max_size":"8M","memory_limit":"256M","max_execution_time":"300","max_input_time":"60"}
+[2025-07-11 12:00:56] Iniciando teste de upload
+[2025-07-11 12:00:56] POST: []
+[2025-07-11 12:00:56] FILES: []

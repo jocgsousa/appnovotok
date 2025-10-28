@@ -1,0 +1,1 @@
+Necessário usar o instantclient_19_25 baixar em https://www.oracle.com/database/technologies/instant-client/winx64-64-downloads.html

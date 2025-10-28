@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="0;url=downloads.html">
+    <title>NovoTok - Redirecionando...</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 50px;
+            background-color: #f8f9fa;
+        }
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #dc3545;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="loader"></div>
+    <p>Redirecionando para a página de download do NovoTok...</p>
+    <p>Se você não for redirecionado automaticamente, <a href="downloads.html">clique aqui</a>.</p>
+    <script>
+        window.location.href = 'downloads.html';
+    </script>
+</body>
+</html> 

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Gerenciamento - DataSync PDV</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="custom-header">
+            <div class="title-bar">
+                <div class="title">Sincronizador
+                    <div class="sync-status">
+                        <span id="status-indicator" class="status-stopped">●</span>
+                        <span id="status-text">Parado</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <!-- Botões para abrir modais -->
+            <section class="modal-buttons">
+                <div class="button-group">
+                    <button id="openConfigModal" class="btn btn-primary">⚙️ Configurações Globais</button>
+                    <button id="openCaixaModal" class="btn btn-success">➕ Cadastrar Novo Caixa</button>
+                </div>
+            </section>
+
+            <!-- Seção de Lista de Caixas -->
+            <section class="caixas-list">
+                <h2>📋 Caixas Cadastrados</h2>
+                <div class="list-actions">
+                    <button id="selectAll" class="btn btn-secondary">✅ Selecionar Todos</button>
+        <button id="deselectAll" class="btn btn-secondary">❌ Desmarcar Todos</button>
+        <button id="testAllConnections" class="btn btn-info">🔍 Testar Todas as Conexões</button>
+        <button id="startSync" class="btn btn-success">▶️ Iniciar Sincronização</button>
+        <button id="stopSync" class="btn btn-danger">⏹️ Parar Sincronização</button>
+                </div>
+                <div id="caixasList" class="caixas-container">
+                    <!-- Lista de caixas será carregada aqui -->
+                </div>
+            </section>
+
+            <!-- Seção de Estatísticas da API -->
+            <section class="api-stats-section">
+                <h2>📊 Estatísticas da API</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Total de Requisições</div>
+                        <div class="stat-value" id="totalRequests">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Login</div>
+                        <div class="stat-value" id="loginRequests">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Verificar Pedidos</div>
+                        <div class="stat-value" id="checkRequests">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Enviar Pedidos para Api</div>
+                        <div class="stat-value" id="sendPedidos">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Atualizar Status</div>
+                        <div class="stat-value" id="updateStatus">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Inserir Requisição</div>
+                        <div class="stat-value" id="insertRequest">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Tempo Ativo</div>
+                        <div class="stat-value" id="uptime">00:00:00</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Último Reset</div>
+                        <div class="stat-value" id="lastReset">-</div>
+                    </div>
+                </div>
+                <div class="stats-actions">
+                    <button id="refreshStats" class="btn btn-info">🔄 Atualizar</button>
+                    <button id="resetStats" class="btn btn-warning">🔄 Resetar Contadores</button>
+                </div>
+            </section>
+
+            <!-- Seção de Logs -->
+            <section class="logs-section">
+                <h2>📝 Logs do Sistema</h2>
+                <div id="logs" class="logs-container">
+                    <p class="log-entry">Sistema iniciado. Aguardando ações...</p>
+                </div>
+                <button id="clearLogs" class="btn btn-secondary">🗑️ Limpar Logs</button>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal de Configurações Globais -->
+    <div id="configModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>⚙️ Configurações Globais</h2>
+                <span class="close" id="closeConfigModal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="config-grid">
+                    <div class="form-group">
+                        <label for="backendApiUrl">URL do Servidor Backend:</label>
+                        <input type="text" id="backendApiUrl" value="http://localhost" placeholder="http://localhost">
+                        <small class="form-help">URL base do servidor backend (sem porta)</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="backendApiPort">Porta do Servidor Backend:</label>
+                        <input type="number" id="backendApiPort" min="1" max="65535" value="3333" placeholder="3333">
+                        <small class="form-help">Porta do servidor backend (1-65535)</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="exdApiUrl">URL da API Externa:</label>
+                        <input type="text" id="exdApiUrl" value="https://novotokapi.online/api/v1" placeholder="https://novotokapi.online/api/v1">
+                        <small class="form-help">URL da API externa para sincronização</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="exdUserApi">Usuário da API Externa:</label>
+                        <input type="text" id="exdUserApi" value="admin@gmail.com" placeholder="admin@gmail.com">
+                        <small class="form-help">Usuário para autenticação na API externa</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="exdPassApi">Senha da API Externa:</label>
+                        <input type="password" id="exdPassApi" value="@Ntkti1793" placeholder="Digite a senha">
+                        <small class="form-help">Senha para autenticação na API externa</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="checkInterval">Intervalo de Verificação (segundos):</label>
+                        <input type="number" id="checkInterval" min="1" max="300" value="3" placeholder="3">
+                        <small class="form-help">Intervalo entre verificações de requisições (1-300 segundos)</small>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="closeConfigModalBtn">Fechar</button>
+                <button class="btn btn-primary" id="saveConfigBtn">💾 Salvar Configurações</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Cadastrar Novo Caixa -->
+    <div id="caixaModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="caixaModalTitle">➕ Cadastrar Novo Caixa</h2>
+                <span class="close" id="closeCaixaModal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="caixaForm">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="nome">Nome do Caixa:</label>
+                            <input type="text" id="nome" required placeholder="Ex: Caixa 202">
+                        </div>
+                        <div class="form-group">
+                            <label for="lcdbHost">Host do Banco:</label>
+                            <input type="text" id="lcdbHost" required placeholder="192.168.20.250:1521">
+                        </div>
+                        <div class="form-group">
+                            <label for="lcdbUser">Usuário do Banco:</label>
+                            <input type="text" id="lcdbUser" required placeholder="CAIXA">
+                        </div>
+                        <div class="form-group">
+                            <label for="lcdbPass">Senha do Banco:</label>
+                            <input type="password" id="lcdbPass" required placeholder="CAIXA">
+                        </div>
+                        <div class="form-group">
+                            <label for="lcdbName">Nome do Banco:</label>
+                            <input type="text" id="lcdbName" required placeholder="XE">
+                        </div>
+                        <div class="form-group">
+                            <label for="filial">Filial:</label>
+                            <input type="number" id="filial" required placeholder="2">
+                        </div>
+                        <div class="form-group">
+                            <label for="caixa">Número do Caixa:</label>
+                            <input type="number" id="caixa" required placeholder="202">
+                        </div>
+                        <div class="form-group">
+                            <label for="milissegundos">Milissegundos:</label>
+                            <input type="number" id="milissegundos" value="60000" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="syncInterval">Intervalo de Sync:</label>
+                            <input type="number" id="syncInterval" value="60000" required>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <!-- Seção de Logs -->
+            <div class="modal-logs">
+                <h4>📋 Logs de Teste</h4>
+                <div id="modalLogContainer" class="log-container">
+                    <div class="log-placeholder">Nenhum log ainda. Clique em "Testar Conexão" para verificar a conectividade.</div>
+                </div>
+                <button type="button" class="btn btn-info" onclick="testCaixaConnectionInModal()">🔍 Testar Conexão</button>
+                <button type="button" class="btn btn-secondary" onclick="clearModalLogs()">🗑️ Limpar Logs</button>
+            </div>
+            
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeCaixaModal()">❌ Cancelar</button>
+                <button type="button" id="cancelCaixaEdit" class="btn btn-warning" onclick="cancelEdit()" style="display: none;">🚫 Cancelar Edição</button>
+                <button type="submit" id="saveCaixaBtn" class="btn btn-primary">💾 Salvar Caixa</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Testar Todas as Conexões -->
+    <div id="testAllModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🔍 Teste de Todas as Conexões</h2>
+                <span class="close" onclick="closeTestAllModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="test-progress">
+                    <div class="progress-info">
+                        <span id="testProgress">Preparando testes...</span>
+                        <button id="startTestAll" class="btn btn-primary">▶️ Iniciar Testes</button>
+                    </div>
+                </div>
+                
+                <div id="testResultsList" class="test-results-container">
+                    <!-- Lista de resultados será preenchida dinamicamente -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>

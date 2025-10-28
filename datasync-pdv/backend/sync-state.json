@@ -1,0 +1,28 @@
+{
+  "isActive": false,
+  "startedAt": null,
+  "caixasConfigs": [],
+  "globalConfig": {},
+  "externalApiConfig": {},
+  "connectedCaixas": [],
+  "lastSyncCycle": null,
+  "apiStats": {
+    "total": 0,
+    "login": 0,
+    "checkRequests": 0,
+    "sendPedidos": 0,
+    "updateStatus": 0,
+    "insertRequest": 0,
+    "lastReset": null
+  },
+  "token": null,
+  "intervals": {
+    "syncInterval": null,
+    "loginInterval": null,
+    "monitorInterval": null,
+    "globalLoginInterval": null
+  },
+  "lastClearState": "2025-09-03T13:20:53.939Z",
+  "clearStateReason": "Parada manual da sincronização via stopSync() - Autorizado: true",
+  "clearStateStack": "Error\n    at MultiCaixaManager.clearState (C:\\dev\\appnovotok\\datasync-pdv\\multi-caixa-manager.js:173:27)\n    at MultiCaixaManager.stopSync (C:\\dev\\appnovotok\\datasync-pdv\\multi-caixa-manager.js:1427:14)\n    at async C:\\dev\\appnovotok\\datasync-pdv\\backend\\server.js:225:7"
+}

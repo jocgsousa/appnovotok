@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Login</title>
+</head>
+<body>
+    <h1>Test Login</h1>
+    <form id="loginForm">
+        <div>
+            <label>Nickname:</label>
+            <input type="text" id="nickname" value="admin">
+        </div>
+        <div>
+            <label>Password:</label>
+            <input type="password" id="password" value="123456">
+        </div>
+        <button type="submit">Login</button>
+    </form>
+    
+    <div id="result"></div>
+    
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const nickname = document.getElementById('nickname').value;
+            const password = document.getElementById('password').value;
+            
+            console.log('Attempting login with:', { nickname, password });
+            
+            try {
+                const response = await fetch('http://localhost:3001/api/users/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ nickname, password })
+                });
+                
+                const data = await response.json();
+                
+                console.log('Response:', data);
+                document.getElementById('result').innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('result').innerHTML = 'Error: ' + error.message;
+            }
+        });
+    </script>
+</body>
+</html>

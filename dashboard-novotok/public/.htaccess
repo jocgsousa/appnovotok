@@ -1,0 +1,10 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /painel-novotok/
+  RewriteRule ^index\.html$ - [L]
+  
+  # Se não for um arquivo ou diretório físico, redireciona para index.html
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /painel-novotok/index.html [L]
+</IfModule>

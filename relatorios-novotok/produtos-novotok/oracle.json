@@ -1,0 +1,8 @@
+{
+    "host": "192.168.10.85:1521",
+    "user": "POWERBI",
+    "password": "p0w3b123",
+    "database": "WINT",
+    "connectionLimit": 10,
+    "multipleStatements": true
+}

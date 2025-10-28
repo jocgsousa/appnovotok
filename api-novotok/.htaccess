@@ -1,0 +1,82 @@
+<FilesMatch ".json">
+    Require all denied
+</FilesMatch>
+# <FilesMatch ".lock">
+#     Require all denied
+# </FilesMatch>
+# <FilesMatch "database.php">
+#     Require all denied
+# </FilesMatch>
+# <FilesMatch "jwt_utils.php">
+#     Require all denied
+# </FilesMatch>
+# <FilesMatch "jwt_clientes.php">
+#     Require all denied
+# </FilesMatch>
+
+RewriteEngine On
+RewriteRule ^vendor/ - [F,L]
+RewriteRule ^.git/ - [F,L]
+
+# Configurações CORS para Apache
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "http://localhost:3000"
+    Header set Access-Control-Allow-Methods "GET, POST, OPTIONS, PUT, DELETE"
+    Header set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With"
+    Header set Access-Control-Allow-Credentials "true"
+    
+    # Responder imediatamente a requisições OPTIONS
+    RewriteEngine On
+    RewriteCond %{REQUEST_METHOD} OPTIONS
+    RewriteRule ^(.*)$ $1 [R=200,L]
+</IfModule>
+
+# Redireciona todas as requisições para o index.php
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ /index.php [L,QSA]
+
+# Aumentar limites para upload de arquivos grandes
+php_value upload_max_filesize 100M
+php_value post_max_size 100M
+php_value memory_limit 256M
+php_value max_execution_time 300
+php_value max_input_time 300
+
+# Habilitar reescrita de URL
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+    
+    # Redirecionar para HTTPS se necessário
+    # RewriteCond %{HTTPS} off
+    # RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+    
+    # Permitir acesso a todos os arquivos e diretórios
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ index.php [QSA,L]
+</IfModule>
+
+# Configurações de CORS já estão em cors_config.php
+
+# Definir o tipo MIME para arquivos APK
+<Files *.apk>
+    ForceType application/vnd.android.package-archive
+    Header set Content-Disposition attachment
+</Files>
+
+# Permitir uploads grandes
+<IfModule mod_php.c>
+    php_value upload_max_filesize 100M
+    php_value post_max_size 100M
+    php_value memory_limit 256M
+    php_value max_execution_time 300
+    php_value max_input_time 300
+</IfModule>
+
+# Desabilitar limites de tempo para uploads grandes
+<IfModule mod_reqtimeout.c>
+    RequestReadTimeout header=60,MinRate=500 body=600,MinRate=500
+</IfModule>

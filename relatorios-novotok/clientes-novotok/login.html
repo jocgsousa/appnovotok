@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Clientes NovoTok</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="sessionManager.js"></script>
+    <style>
+        /* Login-specific styles */
+        .login-main-content {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: calc(100vh - 40px);
+            background: linear-gradient(135deg, #ffffff 0%, #ffffff 100%);
+            margin-top: 40px; /* Account for custom title bar */
+        }
+
+        .login-container {
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .logo {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 2rem;
+            font-size: 0.9rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+            text-align: left;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #333;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e1e1e1;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            background: #fff;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 12px 25px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        }
+
+        .login-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .error-message, .success-message {
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            display: none;
+            text-align: left;
+            font-weight: 500;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .loading {
+            display: none;
+            color: #667eea;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .server-status {
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            z-index: 1001;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .server-online {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .server-offline {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .settings-btn {
+            background: transparent;
+            border: none;
+            color: inherit;
+            cursor: pointer;
+            padding: 2px;
+            border-radius: 3px;
+            transition: all 0.2s ease;
+            font-size: 0.7rem;
+        }
+
+        .settings-btn:hover {
+            background: rgba(0, 0, 0, 0.1);
+        }
+
+        /* Settings Modal */
+        .settings-modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(3px);
+        }
+
+        .settings-modal-content {
+            background: white;
+            margin: 15% auto;
+            padding: 0;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+            animation: modalSlideIn 0.3s ease-out;
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .settings-modal-header {
+            padding: 20px 25px;
+            border-bottom: 1px solid #e1e8ed;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .settings-modal-header h3 {
+            margin: 0;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.1rem;
+        }
+
+        .settings-modal-close {
+            background: transparent;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #6c757d;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+
+        .settings-modal-close:hover {
+            background: #f8f9fa;
+            color: #495057;
+        }
+
+        .settings-modal-body {
+            padding: 25px;
+        }
+
+        .settings-modal-footer {
+            padding: 15px 25px;
+            border-top: 1px solid #e1e8ed;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .settings-form-group {
+            margin-bottom: 20px;
+        }
+
+        .settings-form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #2c3e50;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .settings-form-group input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #e1e1e1;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+
+        .settings-form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        /* Change Password Modal */
+        #changePasswordModal .settings-modal-body p {
+            margin-bottom: 20px;
+            color: #e74c3c;
+            font-weight: 500;
+        }
+        
+        #changePasswordModal .settings-form-group {
+            margin-bottom: 20px;
+        }
+        
+        #changePasswordModal .settings-form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #2c3e50;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        
+        #changePasswordModal .settings-form-group input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #e1e1e1;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+        
+        #changePasswordModal .settings-form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <!-- Custom Title Bar -->
+    <div class="custom-titlebar">
+        <div class="titlebar-content">
+            <div class="titlebar-title">
+                <i class="fas fa-chart-line"></i>
+                Sistema de Relatórios - Clientes Novotok
+
+
+                   <div class="server-status" id="serverStatus">
+            <span id="statusText">Verificando...</span>
+            <button type="button" class="settings-btn" id="settingsBtn" title="Configurações da API" style="-webkit-app-region: no-drag;">
+                <i class="fas fa-cog"></i>
+            </button>
+        </div>
+
+            </div>
+            <div class="titlebar-controls">
+                <button class="titlebar-btn minimize-btn" id="minimizeBtn">
+                    <svg width="12" height="12" viewBox="0 0 12 12">
+                        <path d="M2 6h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <button class="titlebar-btn maximize-btn" id="maximizeBtn">
+                    <svg width="12" height="12" viewBox="0 0 12 12">
+                        <rect x="2" y="2" width="8" height="8" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <button class="titlebar-btn close-btn" id="closeBtn">
+                    <svg width="12" height="12" viewBox="0 0 12 12">
+                        <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- App Layout to match main application structure -->
+    <div class="app-layout">
+     
+
+        <div class="login-main-content">
+        <div class="login-container">
+            <div class="logo">
+                <i class="fas fa-chart-line" style="color: #667eea; margin-right: 10px;"></i>
+                NovoTok
+            </div>
+            <div class="subtitle">Sistema de Gestão de Clientes</div>
+
+            <div class="error-message" id="errorMessage"></div>
+            <div class="success-message" id="successMessage"></div>
+            <div class="loading" id="loading">
+                <i class="fas fa-spinner fa-spin"></i> Conectando...
+            </div>
+
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="nickname">
+                        <i class="fas fa-user"></i>
+                        Usuário:
+                    </label>
+                    <input type="text" id="nickname" name="nickname" required autocomplete="username">
+                </div>
+
+                <div class="form-group">
+                    <label for="password">
+                        <i class="fas fa-lock"></i>
+                        Senha:
+                    </label>
+                    <input type="password" id="password" name="password" required autocomplete="current-password">
+                </div>
+
+                <button type="submit" class="login-btn" id="loginBtn">
+                    <i class="fas fa-sign-in-alt"></i>
+                    Entrar
+                </button>
+            </form>
+        </div>
+    </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="settings-modal">
+        <div class="settings-modal-content">
+            <div class="settings-modal-header">
+                <h3>
+                    <i class="fas fa-cog"></i>
+                    Configurações da API
+                </h3>
+                <button class="settings-modal-close" id="settingsModalClose">&times;</button>
+            </div>
+            <div class="settings-modal-body">
+                <div class="settings-form-group">
+                    <label for="apiUrlInput">URL da API:</label>
+                    <input type="url" id="apiUrlInput" placeholder="http://192.168.10.200:3334/api" value="http://192.168.10.200:3334/api">
+                </div>
+                <div class="settings-form-group">
+                    <label>Status da Conexão:</label>
+                    <div id="settingsConnectionStatus" style="padding: 8px; border-radius: 5px; font-size: 0.8rem; text-align: center;">
+                        Testando conexão...
+                    </div>
+                </div>
+            </div>
+            <div class="settings-modal-footer">
+                <button class="btn btn-secondary" id="settingsCancelBtn">Cancelar</button>
+                <button class="btn btn-primary" id="settingsSaveBtn">
+                    <i class="fas fa-save"></i> Salvar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Change Password Modal -->
+    <div id="changePasswordModal" class="settings-modal" style="display: none;">
+        <div class="settings-modal-content">
+            <div class="settings-modal-header">
+                <h3>
+                    <i class="fas fa-key"></i>
+                    Alterar Senha
+                </h3>
+                <button class="settings-modal-close" id="changePasswordModalClose">&times;</button>
+            </div>
+            <div class="settings-modal-body">
+                <p style="margin-bottom: 20px; color: #e74c3c; font-weight: 500;">
+                    <i class="fas fa-exclamation-triangle"></i> 
+                    Sua senha atual é fraca (1234). Por favor, altere sua senha para continuar.
+                </p>
+                <p style="margin-bottom: 20px; color: #666; font-weight: 400; font-size: 0.9rem;">
+                    Por motivos de segurança, é obrigatório alterar a senha padrão para acessar o sistema.
+                </p>
+                
+                <div class="error-message" id="changePasswordError" style="display: none; margin-bottom: 15px;"></div>
+                <div class="success-message" id="changePasswordSuccess" style="display: none; margin-bottom: 15px;"></div>
+                
+                <div class="settings-form-group">
+                    <label for="currentPassword">Senha Atual:</label>
+                    <input type="password" id="currentPassword" placeholder="Digite sua senha atual" autocomplete="current-password">
+                </div>
+                
+                <div class="settings-form-group">
+                    <label for="newPassword">Nova Senha:</label>
+                    <input type="password" id="newPassword" placeholder="Digite sua nova senha" autocomplete="new-password">
+                </div>
+                
+                <div class="settings-form-group">
+                    <label for="confirmPassword">Confirmar Nova Senha:</label>
+                    <input type="password" id="confirmPassword" placeholder="Confirme sua nova senha" autocomplete="new-password">
+                </div>
+            </div>
+            <div class="settings-modal-footer">
+                <button class="btn btn-secondary" id="changePasswordCancelBtn">Cancelar</button>
+                <button class="btn btn-primary" id="changePasswordSaveBtn">
+                    <i class="fas fa-save"></i> Alterar Senha
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API Configuration
+        function getApiBaseUrl() {
+            return localStorage.getItem('apiBaseUrl') || 'http://192.168.10.200:3334/api';
+        }
+        
+        function setApiBaseUrl(url) {
+            localStorage.setItem('apiBaseUrl', url);
+        }
+        
+        const API_BASE_URL = getApiBaseUrl();
+        
+        // Elements
+        const loginForm = document.getElementById('loginForm');
+        const nicknameInput = document.getElementById('nickname');
+        const passwordInput = document.getElementById('password');
+        const loginBtn = document.getElementById('loginBtn');
+        const errorMessage = document.getElementById('errorMessage');
+        const successMessage = document.getElementById('successMessage');
+        const loading = document.getElementById('loading');
+        const serverStatus = document.getElementById('serverStatus');
+        const statusText = document.getElementById('statusText');
+        const settingsBtn = document.getElementById('settingsBtn');
+        const settingsModal = document.getElementById('settingsModal');
+        const settingsModalClose = document.getElementById('settingsModalClose');
+        const apiUrlInput = document.getElementById('apiUrlInput');
+        const settingsConnectionStatus = document.getElementById('settingsConnectionStatus');
+        const settingsCancelBtn = document.getElementById('settingsCancelBtn');
+        const settingsSaveBtn = document.getElementById('settingsSaveBtn');
+
+        // Check server status
+        async function checkServerStatus() {
+            try {
+                const currentApiUrl = getApiBaseUrl();
+                const response = await fetch(`${currentApiUrl}/health`);
+                if (response.ok) {
+                    serverStatus.className = 'server-status server-online';
+                    statusText.textContent = '🟢 Servidor Online';
+                } else {
+                    throw new Error('Server not responding');
+                }
+            } catch (error) {
+                serverStatus.className = 'server-status server-offline';
+                statusText.textContent = '🔴 Servidor Offline';
+            }
+        }
+
+        // Settings Modal Functions
+        function openSettingsModal() {
+            apiUrlInput.value = getApiBaseUrl();
+            settingsModal.style.display = 'block';
+            testApiConnection();
+        }
+
+        function closeSettingsModal() {
+            settingsModal.style.display = 'none';
+        }
+
+        async function testApiConnection() {
+            const testUrl = apiUrlInput.value.trim();
+            if (!testUrl) {
+                settingsConnectionStatus.innerHTML = '<span style="color: #dc3545;">URL inválida</span>';
+                settingsConnectionStatus.style.backgroundColor = '#f8d7da';
+                return;
+            }
+
+            settingsConnectionStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testando...';
+            settingsConnectionStatus.style.backgroundColor = '#e2e3e5';
+
+            try {
+                const response = await fetch(`${testUrl}/health`);
+                if (response.ok) {
+                    settingsConnectionStatus.innerHTML = '🟢 Conexão bem-sucedida';
+                    settingsConnectionStatus.style.backgroundColor = '#d4edda';
+                    settingsConnectionStatus.style.color = '#155724';
+                } else {
+                    throw new Error('Server not responding');
+                }
+            } catch (error) {
+                settingsConnectionStatus.innerHTML = '🔴 Falha na conexão';
+                settingsConnectionStatus.style.backgroundColor = '#f8d7da';
+                settingsConnectionStatus.style.color = '#721c24';
+            }
+        }
+
+        function saveApiSettings() {
+            const newUrl = apiUrlInput.value.trim();
+            if (!newUrl) {
+                alert('Por favor, insira uma URL válida.');
+                return;
+            }
+
+            setApiBaseUrl(newUrl);
+            closeSettingsModal();
+            
+            // Update the current API_BASE_URL and recheck status
+            window.API_BASE_URL = newUrl;
+            checkServerStatus();
+            
+            showSuccess('Configurações salvas com sucesso!');
+        }
+
+        // Show/hide messages
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            successMessage.style.display = 'none';
+        }
+
+        function showSuccess(message) {
+            successMessage.textContent = message;
+            successMessage.style.display = 'block';
+            errorMessage.style.display = 'none';
+        }
+
+        function hideMessages() {
+            errorMessage.style.display = 'none';
+            successMessage.style.display = 'none';
+        }
+
+        function setLoading(isLoading) {
+            loading.style.display = isLoading ? 'block' : 'none';
+            loginBtn.disabled = isLoading;
+            if (isLoading) {
+                loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Conectando...';
+            } else {
+                loginBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Entrar';
+            }
+        }
+
+        // Login function
+        async function login(nickname, password) {
+            try {
+                const currentApiUrl = getApiBaseUrl();
+                console.log('Attempting login with:', { nickname, password });
+                
+                const response = await fetch(`${currentApiUrl}/users/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ nickname, password })
+                });
+
+                console.log('Response status:', response.status);
+                
+                const data = await response.json();
+                console.log('Response data:', data);
+
+                if (response.ok && data.success) {
+                    console.log('Login successful, storing user data...');
+                    
+                    // Save the nickname for future logins
+                    if (window.sessionManager) {
+                        window.sessionManager.saveLastNickname(nickname);
+                    } else {
+                        localStorage.setItem('lastNickname', nickname);
+                    }
+                    
+                    try {
+                        // Store user data with error handling
+                        localStorage.setItem('user', JSON.stringify(data.data.user));
+                        localStorage.setItem('isLoggedIn', 'true');
+                        
+                        // Force localStorage to be written to disk
+                        const storedUser = localStorage.getItem('user');
+                        const storedLogin = localStorage.getItem('isLoggedIn');
+                        
+                        console.log('User data stored:', {
+                            user: storedUser ? JSON.parse(storedUser) : null,
+                            isLoggedIn: storedLogin
+                        });
+                        
+                        if (storedLogin === 'true' && storedUser) {
+                            // Check if user needs to change password
+                            if (data.data.needsPasswordChange) {
+                                console.log('User needs to change password, showing change password modal...');
+                                showChangePasswordModal(data.data.user);
+                            } else {
+                                console.log('Redirecting to index.html...');
+                                window.location.replace('index.html'); // Immediate redirect
+                            }
+                        } else {
+                            throw new Error('Failed to save user data to localStorage');
+                        }
+                    } catch (storageError) {
+                        console.error('localStorage error:', storageError);
+                        showError('Erro ao salvar dados do usuário. Tente novamente.');
+                    }
+                } else {
+                    console.log('Login failed:', data);
+                    showError(data.message || 'Erro ao fazer login');
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                showError('Erro de conexão com o servidor. Verifique se o backend está rodando.');
+            }
+        }
+
+        // Form submit handler
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const nickname = nicknameInput.value.trim();
+            const password = passwordInput.value;
+            
+            if (!nickname || !password) {
+                showError('Por favor, preencha todos os campos.');
+                return;
+            }
+            
+            hideMessages();
+            setLoading(true);
+            
+            await login(nickname, password);
+            
+            setLoading(false);
+        });
+
+        // Title bar controls
+        document.getElementById('minimizeBtn').addEventListener('click', () => {
+            if (window.electronAPI) {
+                window.electronAPI.windowMinimize();
+            }
+        });
+        document.getElementById('maximizeBtn').addEventListener('click', () => {
+            if (window.electronAPI) {
+                window.electronAPI.windowMaximize();
+            }
+        });
+        document.getElementById('closeBtn').addEventListener('click', () => {
+            if (window.electronAPI) {
+                window.electronAPI.windowClose();
+            }
+        });
+
+        // Check server status on load
+        checkServerStatus();
+        
+        // Auto-fill last used nickname
+        const lastNickname = localStorage.getItem('lastNickname');
+        if (lastNickname && nicknameInput) {
+            nicknameInput.value = lastNickname;
+            console.log('Auto-filled last used nickname:', lastNickname);
+        }
+        
+        // Check server status every 30 seconds
+        setInterval(checkServerStatus, 30000);
+
+        // Settings modal event listeners
+        if (settingsBtn) {
+            settingsBtn.addEventListener('click', openSettingsModal);
+        }
+
+        if (settingsModalClose) {
+            settingsModalClose.addEventListener('click', closeSettingsModal);
+        }
+
+        if (settingsCancelBtn) {
+            settingsCancelBtn.addEventListener('click', closeSettingsModal);
+        }
+
+        if (settingsSaveBtn) {
+            settingsSaveBtn.addEventListener('click', saveApiSettings);
+        }
+
+        if (settingsModal) {
+            settingsModal.addEventListener('click', (e) => {
+                if (e.target === settingsModal) {
+                    closeSettingsModal();
+                }
+            });
+        }
+
+        if (apiUrlInput) {
+            apiUrlInput.addEventListener('input', testApiConnection);
+        }
+
+        // Check if already logged in
+        if (localStorage.getItem('isLoggedIn') === 'true') {
+            window.location.href = 'index.html';
+        }
+        
+        // Change Password Modal Elements
+        const changePasswordModal = document.getElementById('changePasswordModal');
+        const changePasswordModalClose = document.getElementById('changePasswordModalClose');
+        const changePasswordCancelBtn = document.getElementById('changePasswordCancelBtn');
+        const changePasswordSaveBtn = document.getElementById('changePasswordSaveBtn');
+        const currentPasswordInput = document.getElementById('currentPassword');
+        const newPasswordInput = document.getElementById('newPassword');
+        const confirmPasswordInput = document.getElementById('confirmPassword');
+        const changePasswordError = document.getElementById('changePasswordError');
+        const changePasswordSuccess = document.getElementById('changePasswordSuccess');
+        
+        let currentUser = null;
+        
+        // Show Change Password Modal
+        function showChangePasswordModal(user) {
+            currentUser = user;
+            changePasswordModal.style.display = 'block';
+            hideChangePasswordMessages();
+            clearChangePasswordForm();
+        }
+        
+        // Hide Change Password Modal
+        function hideChangePasswordModal() {
+            changePasswordModal.style.display = 'none';
+            currentUser = null;
+            clearChangePasswordForm();
+        }
+        
+        // Show/hide change password messages
+        function showErrorChangePassword(message) {
+            changePasswordError.textContent = message;
+            changePasswordError.style.display = 'block';
+            changePasswordSuccess.style.display = 'none';
+        }
+
+        function showSuccessChangePassword(message) {
+            changePasswordSuccess.textContent = message;
+            changePasswordSuccess.style.display = 'block';
+            changePasswordError.style.display = 'none';
+        }
+
+        function hideChangePasswordMessages() {
+            changePasswordError.style.display = 'none';
+            changePasswordSuccess.style.display = 'none';
+        }
+        
+        // Clear change password form
+        function clearChangePasswordForm() {
+            currentPasswordInput.value = '';
+            newPasswordInput.value = '';
+            confirmPasswordInput.value = '';
+        }
+        
+        // Change Password function
+        async function changePassword(currentPassword, newPassword, confirmPassword) {
+            try {
+                // Validate passwords
+                if (!currentPassword || !newPassword || !confirmPassword) {
+                    showErrorChangePassword('Por favor, preencha todos os campos.');
+                    return;
+                }
+                
+                if (newPassword !== confirmPassword) {
+                    showErrorChangePassword('A nova senha e a confirmação não coincidem.');
+                    return;
+                }
+                
+                if (newPassword.length < 4) {
+                    showErrorChangePassword('A nova senha deve ter pelo menos 4 caracteres.');
+                    return;
+                }
+                
+                if (newPassword === '1234') {
+                    showErrorChangePassword('A nova senha não pode ser "1234". Por favor, escolha uma senha mais segura.');
+                    return;
+                }
+                
+                const currentApiUrl = getApiBaseUrl();
+                console.log('Changing password for user:', currentUser.id);
+                
+                const response = await fetch(`${currentApiUrl}/users/${currentUser.id}/change-password`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        currentPassword: currentPassword,
+                        newPassword: newPassword
+                    })
+                });
+                
+                const data = await response.json();
+                console.log('Change password response:', data);
+                
+                if (response.ok && data.success) {
+                    showSuccessChangePassword('Senha alterada com sucesso!');
+                    
+                    // Close modal after a short delay and redirect to main app
+                    setTimeout(() => {
+                        hideChangePasswordModal();
+                        window.location.replace('index.html');
+                    }, 1500);
+                } else {
+                    showErrorChangePassword(data.message || 'Erro ao alterar a senha');
+                }
+            } catch (error) {
+                console.error('Change password error:', error);
+                showErrorChangePassword('Erro de conexão com o servidor. Verifique se o backend está rodando.');
+            }
+        }
+        
+        // Event listeners for change password modal
+        if (changePasswordModalClose) {
+            changePasswordModalClose.addEventListener('click', hideChangePasswordModal);
+        }
+        
+        if (changePasswordCancelBtn) {
+            changePasswordCancelBtn.addEventListener('click', hideChangePasswordModal);
+        }
+        
+        if (changePasswordSaveBtn) {
+            changePasswordSaveBtn.addEventListener('click', async () => {
+                const currentPassword = currentPasswordInput.value;
+                const newPassword = newPasswordInput.value;
+                const confirmPassword = confirmPasswordInput.value;
+                
+                hideChangePasswordMessages();
+                await changePassword(currentPassword, newPassword, confirmPassword);
+            });
+        }
+        
+        if (changePasswordModal) {
+            changePasswordModal.addEventListener('click', (e) => {
+                if (e.target === changePasswordModal) {
+                    hideChangePasswordModal();
+                }
+            });
+        }
+    </script>
+</body>
+</html>

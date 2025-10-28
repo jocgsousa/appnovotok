@@ -1,0 +1,20 @@
+# Permitir acesso direto aos arquivos APK
+<FilesMatch "\.apk$">
+    Header set Content-Type "application/vnd.android.package-archive"
+    Header set Content-Disposition "attachment"
+</FilesMatch>
+
+# Configurações para download de arquivos grandes
+php_value upload_max_filesize 100M
+php_value post_max_size 100M
+php_value memory_limit 128M
+php_value max_execution_time 300
+php_value max_input_time 300
+
+# Permitir listagem de diretórios
+Options +Indexes
+
+# Permitir acesso de qualquer origem (CORS)
+Header set Access-Control-Allow-Origin "*"
+Header set Access-Control-Allow-Methods "GET, OPTIONS"
+Header set Access-Control-Allow-Headers "Content-Type" 

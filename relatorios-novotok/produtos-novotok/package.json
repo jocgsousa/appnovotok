@@ -1,0 +1,22 @@
+{
+  "name": "produtos-novotok-extractor",
+  "version": "1.0.0",
+  "description": "Script para extrair códigos de produtos do Excel e buscar dados no Oracle",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "oracledb": "^6.3.0",
+    "xlsx": "^0.18.5"
+  },
+  "keywords": [
+    "oracle",
+    "excel",
+    "produtos",
+    "extractor"
+  ],
+  "author": "",
+  "license": "ISC"
+}

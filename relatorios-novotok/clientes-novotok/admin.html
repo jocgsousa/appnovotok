@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administração de Usuários - Clientes NovoTok</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="sessionManager.js"></script>
+    <style>
+        /* Admin-specific styles */
+        .admin-main-content {
+            padding: 20px;
+            background: #f8f9fa;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .admin-header {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .admin-header h1 {
+            color: #2c3e50;
+            font-size: 1.8rem;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin: 0;
+        }
+
+        .admin-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .users-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .users-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .search-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .search-input {
+            padding: 8px 15px;
+            border: 2px solid #e1e1e1;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            width: 250px;
+            transition: all 0.3s ease;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .filter-select {
+            padding: 8px 15px;
+            border: 2px solid #e1e1e1;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .filter-select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .users-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        .users-table th,
+        .users-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e1e8ed;
+        }
+
+        .users-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .users-table td {
+            font-size: 0.9rem;
+        }
+
+        .users-table tbody tr:hover {
+            background: rgba(102, 126, 234, 0.05);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-inactive {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .role-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .role-admin {
+            background: rgba(102, 126, 234, 0.1);
+            color: #667eea;
+        }
+
+        .role-user {
+            background: rgba(108, 117, 125, 0.1);
+            color: #6c757d;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 5px;
+        }
+
+        .btn-action {
+            padding: 6px 10px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-edit {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-edit:hover {
+            background: #0056b3;
+        }
+
+        .btn-delete {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-delete:hover {
+            background: #c82333;
+        }
+
+        .btn-block {
+            background: #ffc107;
+            color: #212529;
+        }
+
+        .btn-block:hover {
+            background: #e0a800;
+        }
+
+        .btn-unblock {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-unblock:hover {
+            background: #1e7e34;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .pagination button {
+            padding: 8px 12px;
+            border: 1px solid #dee2e6;
+            background: white;
+            color: #495057;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: #e9ecef;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .pagination .page-active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(3px);
+        }
+
+        .modal-content {
+            background: white;
+            margin: 10% auto;
+            padding: 0;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+            animation: modalSlideIn 0.3s ease-out;
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-header {
+            padding: 20px 30px;
+            border-bottom: 1px solid #e1e8ed;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .modal-close {
+            background: transparent;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #6c757d;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+
+        .modal-close:hover {
+            background: #f8f9fa;
+            color: #495057;
+        }
+
+        .modal-body {
+            padding: 30px;
+        }
+
+        .modal-footer {
+            padding: 20px 30px;
+            border-top: 1px solid #e1e8ed;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #2c3e50;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e1e1e1;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+            color: #667eea;
+        }
+
+        .error-message, .success-message {
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            display: none;
+            font-weight: 500;
+            line-height: 1.5;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            white-space: pre-line; /* Preserve line breaks */
+        }
+
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        /* Form text helper */
+        .form-text {
+            font-size: 0.8rem;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+
+        .no-users {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6c757d;
+        }
+
+        .no-users i {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        /* Back button */
+        .back-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .back-btn:hover {
+            background: #545b62;
+            transform: translateY(-1px);
+        }
+    </style>
+</head>
+<body>
+    <!-- Authentication Check -->
+    <script>
+        // Check authentication on page load
+        function checkAuthentication() {
+            console.log('Admin.html loaded - checking authentication...');
+            
+            const isLoggedIn = localStorage.getItem('isLoggedIn');
+            const userStr = localStorage.getItem('user');
+            
+            if (isLoggedIn !== 'true' || !userStr) {
+                console.log('Not logged in, redirecting to login.html');
+                window.location.replace('login.html');
+                return false;
+            } else {
+                try {
+                    const user = JSON.parse(userStr);
+                    if (!user.id || !user.email) {
+                        throw new Error('Invalid user data');
+                    }
+                    
+                    // Check if user is admin
+                    if (user.role !== 'admin') {
+                        console.log('Access denied: user is not admin');
+                        alert('Acesso negado: você não tem permissão para acessar esta área.');
+                        window.location.replace('index.html');
+                        return false;
+                    }
+                    
+                    console.log('Admin user authenticated, loading admin panel. User:', user.name);
+                    return true;
+                } catch (error) {
+                    console.error('Invalid user data in localStorage:', error);
+                    localStorage.removeItem('user');
+                    localStorage.removeItem('isLoggedIn');
+                    window.location.replace('login.html');
+                    return false;
+                }
+            }
+        }
+        
+        // Run authentication check
+        if (!checkAuthentication()) {
+            throw new Error('Authentication failed, stopping script execution');
+        }
+    </script>
+
+    <!-- Custom Title Bar -->
+    <div class="custom-titlebar">
+        <div class="titlebar-content">
+            <div class="titlebar-title">
+                <i class="fas fa-users-cog"></i>
+                Administração de Usuários - Clientes NovoTok
+                <button class="logout-btn" id="backBtn" title="Voltar"  style="-webkit-app-region: no-drag;">
+                     <i class="fas fa-arrow-left"></i>
+                </button>
+            <div class="user-info" id="userInfo">
+                <span class="user-name" id="userNameDisplay"></span>
+                <span class="user-role" id="userRole"></span>
+            </div>
+
+            </div>
+            <div class="titlebar-controls">
+                <button class="titlebar-btn minimize-btn" id="minimizeBtn">
+                    <svg width="12" height="12" viewBox="0 0 12 12">
+                        <path d="M2 6h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <button class="titlebar-btn maximize-btn" id="maximizeBtn">
+                    <svg width="12" height="12" viewBox="0 0 12 12">
+                        <rect x="2" y="2" width="8" height="8" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <button class="titlebar-btn close-btn" id="closeBtn">
+                    <svg width="12" height="12" viewBox="0 0 12 12">
+                        <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-layout">
+        <div class="admin-main-content">
+           
+            <!-- Admin Header -->
+            <div class="admin-header">
+                <h1>
+                    <i class="fas fa-users-cog"></i>
+                    Gerenciamento de Usuários
+                </h1>
+                <div class="admin-actions">
+                    <button class="btn btn-success" id="addUserBtn">
+                        <i class="fas fa-user-plus"></i>
+                        Adicionar Usuário
+                    </button>
+                </div>
+            </div>
+
+            <!-- Users Container -->
+            <div class="users-container">
+                <div class="users-controls">
+                    <div class="search-controls">
+                        <input 
+                            type="text" 
+                            class="search-input" 
+                            id="searchInput" 
+                            placeholder="Pesquisar por nome, nickname ou email..."
+                        >
+                        <select class="filter-select" id="roleFilter">
+                            <option value="">Todos os Papéis</option>
+                            <option value="admin">Administrador</option>
+                            <option value="user">Usuário</option>
+                        </select>
+                        <select class="filter-select" id="statusFilter">
+                            <option value="">Todos os Status</option>
+                            <option value="active">Ativo</option>
+                            <option value="inactive">Inativo</option>
+                        </select>
+                    </div>
+                    <div class="users-count" id="usersCount">
+                        <span class="badge">0 usuários</span>
+                    </div>
+                </div>
+
+                <div class="error-message" id="errorMessage"></div>
+                <div class="success-message" id="successMessage"></div>
+
+                <div class="loading" id="loading">
+                    <i class="fas fa-spinner fa-spin fa-2x"></i>
+                    <p>Carregando usuários...</p>
+                </div>
+
+                <div id="usersTableContainer">
+                    <table class="users-table" id="usersTable">
+                        <thead>
+                            <tr>
+                                <th>Nome</th>
+                                <th>Nickname</th>
+                                <th>Email</th>
+                                <th>Papel</th>
+                                <th>Status</th>
+                                <th>Último Login</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="no-users" id="noUsers" style="display: none;">
+                    <i class="fas fa-users"></i>
+                    <h3>Nenhum usuário encontrado</h3>
+                    <p>Não há usuários cadastrados ou que correspondam aos filtros aplicados.</p>
+                </div>
+
+                <div class="pagination" id="pagination"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit User Modal -->
+    <div id="userModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">
+                    <i class="fas fa-user-plus"></i>
+                    Adicionar Usuário
+                </h3>
+                <button class="modal-close" id="modalClose">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="error-message" id="modalErrorMessage"></div>
+                <div class="success-message" id="modalSuccessMessage"></div>
+                
+                <form id="userForm">
+                    <input type="hidden" id="userId" name="userId">
+                    
+                    <div class="form-group">
+                        <label for="userName">Nome:</label>
+                        <input type="text" id="userName" name="name" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="userNickname">Nickname:</label>
+                        <input type="text" id="userNickname" name="nickname" required pattern="[a-zA-Z0-9_]+" title="Apenas letras, números e underscore são permitidos">
+                        <small class="form-text">Apenas letras, números e underscore (_) são permitidos</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="userEmail">Email:</label>
+                        <input type="email" id="userEmail" name="email" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="userPassword">Senha:</label>
+                        <input type="password" id="userPassword" name="password">
+                        <small class="form-text">Deixe em branco para manter a senha atual (apenas na edição)</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="userRole">Papel:</label>
+                        <select id="userRole" name="role" required>
+                            <option value="user">Usuário</option>
+                            <option value="admin">Administrador</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="userStatus">Status:</label>
+                        <select id="userStatus" name="status" required>
+                            <option value="active">Ativo</option>
+                            <option value="inactive">Inativo</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancelBtn">Cancelar</button>
+                <button class="btn btn-primary" id="saveUserBtn">
+                    <i class="fas fa-save"></i>
+                    Salvar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>

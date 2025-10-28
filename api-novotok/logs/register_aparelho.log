@@ -1,0 +1,171 @@
+[2025-07-11 14:06:59] Iniciando script register_aparelho.php
+[2025-07-11 14:06:59] Método da requisição: POST
+[2025-07-11 14:06:59] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-11 14:06:59] Conexão com o banco de dados estabelecida
+[2025-07-11 14:06:59] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-11 14:06:59] Usar ID do dispositivo: sim
+[2025-07-11 14:06:59] Aparelho já cadastrado com código: 30891338
+[2025-07-11 14:22:07] Iniciando script register_aparelho.php
+[2025-07-11 14:22:07] Método da requisição: POST
+[2025-07-11 14:22:07] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-11 14:22:07] Conexão com o banco de dados estabelecida
+[2025-07-11 14:22:07] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-11 14:22:07] Usar ID do dispositivo: sim
+[2025-07-11 14:22:07] Aparelho já cadastrado com código: 30891338
+[2025-07-11 14:28:50] Iniciando script register_aparelho.php
+[2025-07-11 14:28:50] Método da requisição: POST
+[2025-07-11 14:28:50] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-11 14:28:50] Conexão com o banco de dados estabelecida
+[2025-07-11 14:28:50] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-11 14:28:50] Usar ID do dispositivo: sim
+[2025-07-11 14:28:50] Aparelho já cadastrado com código: 30891338
+[2025-07-11 14:40:17] Iniciando script register_aparelho.php
+[2025-07-11 14:40:17] Método da requisição: POST
+[2025-07-11 14:40:17] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-11 14:40:17] Conexão com o banco de dados estabelecida
+[2025-07-11 14:40:17] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-11 14:40:17] Usar ID do dispositivo: sim
+[2025-07-11 14:40:17] Aparelho já cadastrado com código: 30891338
+[2025-07-11 14:44:12] Iniciando script register_aparelho.php
+[2025-07-11 14:44:12] Método da requisição: POST
+[2025-07-11 14:44:12] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-11 14:44:12] Conexão com o banco de dados estabelecida
+[2025-07-11 14:44:12] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-11 14:44:12] Usar ID do dispositivo: sim
+[2025-07-11 14:44:12] Aparelho já cadastrado com código: 30891338
+[2025-07-11 14:52:16] Iniciando script register_aparelho.php
+[2025-07-11 14:52:16] Método da requisição: POST
+[2025-07-11 14:52:16] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-11 14:52:16] Conexão com o banco de dados estabelecida
+[2025-07-11 14:52:16] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-11 14:52:16] Usar ID do dispositivo: sim
+[2025-07-11 14:52:16] Aparelho já cadastrado com código: 30891338
+[2025-07-11 14:53:19] Iniciando script register_aparelho.php
+[2025-07-11 14:53:19] Método da requisição: POST
+[2025-07-11 14:53:19] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-11 14:53:19] Conexão com o banco de dados estabelecida
+[2025-07-11 14:53:19] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-11 14:53:19] Usar ID do dispositivo: sim
+[2025-07-11 14:53:19] Aparelho já cadastrado com código: 30891338
+[2025-07-11 18:29:17] Iniciando script register_aparelho.php
+[2025-07-11 18:29:17] Método da requisição: POST
+[2025-07-11 18:29:17] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-11 18:29:17] Conexão com o banco de dados estabelecida
+[2025-07-11 18:29:17] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-11 18:29:17] Usar ID do dispositivo: sim
+[2025-07-11 18:29:17] Aparelho já cadastrado com código: 30891338
+[2025-07-11 20:37:01] Iniciando script register_aparelho.php
+[2025-07-11 20:37:01] Método da requisição: POST
+[2025-07-11 20:37:01] Dados recebidos: {"name":"Jociel Gregório De Sousa","person_identification_number":"04460169266","email":"gregoriociacom@gmail.com","commercial_zip_code":"68500300","commercial_address":"Rua Sete de Junho","commercial_address_number":"2007","business_district":"Velha Marabá","billingPhone":"94981413567","business_city":"Marabá","city_id":"4534","activity_id":"7","filial":"7","rca":"129","data_nascimento":"11/11/1997"}
+[2025-07-11 20:37:01] Conexão com o banco de dados estabelecida
+[2025-07-11 20:37:01] Recebida requisição para registrar aparelho. Código enviado: nenhum
+[2025-07-11 20:37:01] Usar ID do dispositivo: não
+[2025-07-11 20:37:01] Gerando novo código de aparelho: 75252886
+[2025-07-11 20:37:01] Aparelho registrado com sucesso: 75252886
+[2025-07-11 22:33:36] Iniciando script register_aparelho.php
+[2025-07-11 22:33:36] Método da requisição: POST
+[2025-07-11 22:33:36] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-11 22:33:36] Conexão com o banco de dados estabelecida
+[2025-07-11 22:33:36] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-11 22:33:36] Usar ID do dispositivo: sim
+[2025-07-11 22:33:36] Aparelho já cadastrado com código: 30891338
+[2025-07-11 23:28:58] Iniciando script register_aparelho.php
+[2025-07-11 23:28:58] Método da requisição: POST
+[2025-07-11 23:28:58] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-11 23:28:58] Conexão com o banco de dados estabelecida
+[2025-07-11 23:28:58] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-11 23:28:58] Usar ID do dispositivo: sim
+[2025-07-11 23:28:58] Aparelho já cadastrado com código: 30891338
+[2025-07-12 23:38:30] Iniciando script register_aparelho.php
+[2025-07-12 23:38:30] Método da requisição: POST
+[2025-07-12 23:38:30] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-12 23:38:30] Conexão com o banco de dados estabelecida
+[2025-07-12 23:38:30] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-12 23:38:30] Usar ID do dispositivo: sim
+[2025-07-12 23:38:30] Aparelho já cadastrado com código: 30891338
+[2025-07-14 14:15:16] Iniciando script register_aparelho.php
+[2025-07-14 14:15:16] Método da requisição: POST
+[2025-07-14 14:15:16] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-14 14:15:16] Conexão com o banco de dados estabelecida
+[2025-07-14 14:15:16] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-14 14:15:16] Usar ID do dispositivo: sim
+[2025-07-14 14:15:16] Aparelho já cadastrado com código: 30891338
+[2025-07-14 14:28:23] Iniciando script register_aparelho.php
+[2025-07-14 14:28:23] Método da requisição: POST
+[2025-07-14 14:28:23] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-14 14:28:23] Conexão com o banco de dados estabelecida
+[2025-07-14 14:28:23] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-14 14:28:23] Usar ID do dispositivo: sim
+[2025-07-14 14:28:23] Aparelho já cadastrado com código: 30891338
+[2025-07-14 20:25:01] Iniciando script register_aparelho.php
+[2025-07-14 20:25:01] Método da requisição: POST
+[2025-07-14 20:25:01] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-14 20:25:01] Conexão com o banco de dados estabelecida
+[2025-07-14 20:25:01] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-14 20:25:01] Usar ID do dispositivo: sim
+[2025-07-14 20:25:01] Aparelho já cadastrado com código: 30891338
+[2025-07-15 02:27:33] Iniciando script register_aparelho.php
+[2025-07-15 02:27:33] Método da requisição: POST
+[2025-07-15 02:27:33] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-15 02:27:33] Conexão com o banco de dados estabelecida
+[2025-07-15 02:27:33] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-15 02:27:33] Usar ID do dispositivo: sim
+[2025-07-15 02:27:33] Aparelho já cadastrado com código: 30891338
+[2025-07-15 02:46:18] Iniciando script register_aparelho.php
+[2025-07-15 02:46:18] Método da requisição: POST
+[2025-07-15 02:46:18] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-15 02:46:18] Conexão com o banco de dados estabelecida
+[2025-07-15 02:46:18] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-15 02:46:18] Usar ID do dispositivo: sim
+[2025-07-15 02:46:18] Aparelho já cadastrado com código: 30891338
+[2025-07-15 13:29:29] Iniciando script register_aparelho.php
+[2025-07-15 13:29:29] Método da requisição: POST
+[2025-07-15 13:29:29] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-15 13:29:29] Conexão com o banco de dados estabelecida
+[2025-07-15 13:29:29] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-15 13:29:29] Usar ID do dispositivo: sim
+[2025-07-15 13:29:29] Aparelho já cadastrado com código: 30891338
+[2025-07-15 14:07:44] Iniciando script register_aparelho.php
+[2025-07-15 14:07:44] Método da requisição: POST
+[2025-07-15 14:07:44] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-15 14:07:44] Conexão com o banco de dados estabelecida
+[2025-07-15 14:07:44] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-15 14:07:44] Usar ID do dispositivo: sim
+[2025-07-15 14:07:44] Aparelho já cadastrado com código: 30891338
+[2025-07-15 20:08:05] Iniciando script register_aparelho.php
+[2025-07-15 20:08:05] Método da requisição: POST
+[2025-07-15 20:08:05] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-15 20:08:05] Conexão com o banco de dados estabelecida
+[2025-07-15 20:08:05] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-15 20:08:05] Usar ID do dispositivo: sim
+[2025-07-15 20:08:05] Aparelho já cadastrado com código: 30891338
+[2025-07-16 11:48:00] Iniciando script register_aparelho.php
+[2025-07-16 11:48:00] Método da requisição: POST
+[2025-07-16 11:48:00] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-16 11:48:00] Conexão com o banco de dados estabelecida
+[2025-07-16 11:48:00] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-16 11:48:00] Usar ID do dispositivo: sim
+[2025-07-16 11:48:00] Aparelho já cadastrado com código: 30891338
+[2025-07-18 12:57:17] Iniciando script register_aparelho.php
+[2025-07-18 12:57:17] Método da requisição: POST
+[2025-07-18 12:57:17] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-18 12:57:18] Conexão com o banco de dados estabelecida
+[2025-07-18 12:57:18] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-18 12:57:18] Usar ID do dispositivo: sim
+[2025-07-18 12:57:18] Aparelho já cadastrado com código: 30891338
+[2025-07-18 15:35:22] Iniciando script register_aparelho.php
+[2025-07-18 15:35:22] Método da requisição: POST
+[2025-07-18 15:35:22] Dados recebidos: {"codaparelho":"30891338","use_device_id":true}
+[2025-07-18 15:35:22] Conexão com o banco de dados estabelecida
+[2025-07-18 15:35:22] Recebida requisição para registrar aparelho. Código enviado: 30891338
+[2025-07-18 15:35:22] Usar ID do dispositivo: sim
+[2025-07-18 15:35:22] Usando ID do dispositivo como código: 30891338
+[2025-07-18 15:35:22] Novo aparelho registrado com código: 30891338
+[2025-07-23 02:01:13] Iniciando script register_aparelho.php
+[2025-07-23 02:01:13] Método da requisição: POST
+[2025-07-23 02:01:13] Dados recebidos: {"codaparelho":"a0a9a93380a17e2a","use_device_id":true}
+[2025-07-23 02:01:13] Conexão com o banco de dados estabelecida
+[2025-07-23 02:01:13] Recebida requisição para registrar aparelho. Código enviado: a0a9a93380a17e2a
+[2025-07-23 02:01:13] Usar ID do dispositivo: sim
+[2025-07-23 02:01:13] Usando ID do dispositivo como código: a0a9a93380a17e2a
+[2025-07-23 02:01:13] Novo aparelho registrado com código: a0a9a93380a17e2a

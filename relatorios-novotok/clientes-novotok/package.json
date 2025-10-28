@@ -1,0 +1,84 @@
+{
+  "name": "clientes-novotok",
+  "version": "1.0.0",
+  "description": "Sistema de Relatórios - Clientes Novotok",
+  "main": "main.js",
+  "homepage": "./",
+  "author": "Novotok",
+  "license": "ISC",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:win32": "electron-builder --win --ia32",
+    "build:win64": "electron-builder --win --x64",
+    "build:all-win": "electron-builder --win --ia32 --x64",
+    "dist": "npm run build:all-win",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "build": {
+    "appId": "com.novotok.clientes-novotok",
+    "productName": "Clientes NovoTok",
+    "copyright": "Copyright © 2024 Novotok",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!backend/node_modules/**/*",
+      "!backend/.env",
+      "!dist/**/*",
+      "!.git/**/*",
+      "!README.md",
+      "!QUICK-START.md"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
+      ],
+      "icon": "assets/logo.png",
+      "publisherName": "Novotok",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Clientes NovoTok"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-${arch}-portable.${ext}"
+    }
+  },
+  "keywords": [
+    "electron",
+    "novotok",
+    "clientes",
+    "relatorios",
+    "oracle"
+  ],
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "path": "^0.12.7"
+  },
+  "devDependencies": {
+    "electron": "^37.4.0",
+    "electron-builder": "^25.1.7"
+  }
+}

@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Contatos - Clientes Novotok</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+      rel="stylesheet"
+    />
+    <script src="apiService.js"></script>
+    <script src="sessionManager.js"></script>
+  </head>
+  <body>
+    <!-- Authentication Check -->
+    <script>
+      // Check authentication on page load with retry mechanism
+      function checkAuthentication() {
+        console.log("Index.html loaded - checking authentication...");
+
+        const isLoggedIn = localStorage.getItem("isLoggedIn");
+        const userStr = localStorage.getItem("user");
+
+        console.log("isLoggedIn:", isLoggedIn);
+        console.log("user:", userStr);
+
+        if (isLoggedIn !== "true" || !userStr) {
+          console.log(
+            "Not logged in or missing user data, redirecting to login.html"
+          );
+          // Use replace to avoid back button issues
+          window.location.replace("login.html");
+          return false;
+        } else {
+          try {
+            const user = JSON.parse(userStr);
+            if (!user.id || !user.email) {
+              throw new Error("Invalid user data");
+            }
+            console.log(
+              "User is logged in, proceeding to load main app. User:",
+              user.name,
+              "Role:",
+              user.role
+            );
+
+            // Force check admin button visibility immediately
+            setTimeout(() => {
+              checkAndShowAdminButton(user);
+            }, 100);
+
+            return true;
+          } catch (error) {
+            console.error("Invalid user data in localStorage:", error);
+            localStorage.removeItem("user");
+            localStorage.removeItem("isLoggedIn");
+            window.location.replace("login.html");
+            return false;
+          }
+        }
+      }
+
+      // Function to check and show admin button
+      function checkAndShowAdminButton(user) {
+        console.log(
+          "Checking admin button for user:",
+          user.name,
+          "Role:",
+          user.role
+        );
+
+        const adminBtn = document.getElementById("adminBtn");
+        const tempAdminBtn = document.getElementById("tempAdminBtn");
+
+        if (user.role === "admin") {
+          console.log("User is admin - showing admin buttons");
+
+          // Show title bar admin button
+          if (adminBtn) {
+            console.log("Making title bar admin button visible");
+            adminBtn.style.display = "flex";
+            adminBtn.style.visibility = "visible";
+            adminBtn.style.opacity = "1";
+          }
+
+          // Show temporary admin button
+          if (tempAdminBtn) {
+            console.log("Making temporary admin button visible");
+            tempAdminBtn.style.display = "inline-flex";
+            tempAdminBtn.style.visibility = "visible";
+          }
+        } else {
+          console.log("User is not admin - hiding admin buttons");
+          if (adminBtn) adminBtn.style.display = "none";
+          if (tempAdminBtn) tempAdminBtn.style.display = "none";
+        }
+      }
+
+      // Run authentication check
+      if (!checkAuthentication()) {
+        // Stop script execution if not authenticated
+        throw new Error("Authentication failed, stopping script execution");
+      }
+
+      // Load user information
+      function loadUserInfo() {
+        try {
+          const userStr = localStorage.getItem("user");
+          if (!userStr) {
+            console.warn("No user data found in localStorage");
+            return;
+          }
+
+          const user = JSON.parse(userStr);
+          console.log("Loading user info for:", user.name, "Role:", user.role);
+
+          // Function to update UI elements
+          function updateUserInterface() {
+            const userInfo = document.getElementById("userInfo");
+            const userName = document.getElementById("userName");
+            const userRole = document.getElementById("userRole");
+            const logoutBtn = document.getElementById("logoutBtn");
+            const adminBtn = document.getElementById("adminBtn");
+
+            console.log("Updating UI elements:", {
+              userInfo: !!userInfo,
+              userName: !!userName,
+              userRole: !!userRole,
+              adminBtn: !!adminBtn,
+              userRoleValue: user.role,
+              isAdmin: user.role === "admin",
+            });
+
+            if (userInfo && userName && userRole && user.name) {
+              userName.textContent = user.name;
+              userRole.textContent =
+                user.role === "admin" ? "Administrador" : "Usuário";
+              userInfo.style.display = "flex";
+
+              // Show admin button for admin users with detailed logging
+              if (user.role === "admin") {
+                console.log(
+                  "User is admin, checking admin button element:",
+                  adminBtn
+                );
+                if (adminBtn) {
+                  console.log("Setting admin button display to flex");
+                  adminBtn.style.display = "flex";
+                  adminBtn.style.visibility = "visible";
+                  console.log("Admin button should now be visible");
+                } else {
+                  console.error("Admin button element not found!");
+                }
+              } else {
+                console.log(
+                  "User is not admin - hiding admin button. Role:",
+                  user.role
+                );
+                if (adminBtn) {
+                  adminBtn.style.display = "none";
+                }
+              }
+
+              console.log("User info loaded in UI");
+
+              // Also show temporary admin button for testing
+              const tempAdminBtn = document.getElementById("tempAdminBtn");
+
+              if (user.role === "admin") {
+                if (tempAdminBtn) {
+                  console.log("Showing temporary admin button");
+                  tempAdminBtn.style.display = "inline-flex";
+                  tempAdminBtn.addEventListener("click", function () {
+                    console.log("Opening admin panel from temp button...");
+                    window.location.href = "admin.html";
+                  });
+                }
+              }
+            }
+
+            // Admin panel navigation
+            if (adminBtn) {
+              // Remove existing event listeners
+              const newAdminBtn = adminBtn.cloneNode(true);
+              adminBtn.parentNode.replaceChild(newAdminBtn, adminBtn);
+
+              newAdminBtn.addEventListener("click", function () {
+                console.log("Opening admin panel...");
+                window.location.href = "admin.html";
+              });
+            }
+
+            // Logout functionality
+            if (logoutBtn) {
+              logoutBtn.addEventListener("click", function () {
+                if (confirm("Deseja realmente sair do sistema?")) {
+                  console.log("User logging out...");
+                  
+                  // Destroy session manager
+                  if (window.sessionManager) {
+                    window.sessionManager.destroy();
+                  }
+                  
+                  localStorage.removeItem("user");
+                  localStorage.removeItem("isLoggedIn");
+                  window.location.replace("login.html");
+                }
+              });
+            }
+          }
+
+          // Check if DOM is ready
+          if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", updateUserInterface);
+          } else {
+            // DOM is already loaded
+            updateUserInterface();
+          }
+        } catch (error) {
+          console.error("Error loading user info:", error);
+        }
+      }
+
+      // Load user information
+      loadUserInfo();
+
+      // Periodic check for admin button (fallback)
+      setInterval(() => {
+        const userStr = localStorage.getItem("user");
+        if (userStr) {
+          try {
+            const user = JSON.parse(userStr);
+            if (user.role === "admin") {
+              const adminBtn = document.getElementById("adminBtn");
+              const tempAdminBtn = document.getElementById("tempAdminBtn");
+
+              if (adminBtn && adminBtn.style.display === "none") {
+                console.log("Periodic check: Showing hidden admin button");
+                adminBtn.style.display = "flex";
+              }
+
+              if (tempAdminBtn && tempAdminBtn.style.display === "none") {
+                console.log("Periodic check: Showing hidden temp admin button");
+                tempAdminBtn.style.display = "inline-flex";
+              }
+            }
+          } catch (e) {
+            // Ignore errors in periodic check
+          }
+        }
+      }, 2000); // Check every 2 seconds
+      
+      // Session timer display
+      function updateSessionDisplay() {
+        const sessionStatus = document.getElementById('sessionStatus');
+        const sessionTime = document.getElementById('sessionTime');
+        
+        if (window.sessionManager && sessionStatus && sessionTime) {
+          const remaining = window.sessionManager.getTimeRemainingFormatted();
+          sessionTime.textContent = remaining;
+          sessionStatus.style.display = 'flex';
+          
+          // Change color based on time remaining
+          const timeRemaining = window.sessionManager.getTimeRemaining();
+          if (timeRemaining < 5 * 60 * 1000) { // Less than 5 minutes
+            sessionStatus.style.color = '#e74c3c';
+          } else if (timeRemaining < 10 * 60 * 1000) { // Less than 10 minutes
+            sessionStatus.style.color = '#f39c12';
+          } else {
+            sessionStatus.style.color = '#27ae60';
+          }
+        }
+      }
+      
+      // Update session display every second
+      if (window.sessionManager) {
+        setInterval(updateSessionDisplay, 1000);
+        updateSessionDisplay(); // Initial call
+      }
+    </script>
+    <!-- Custom Title Bar -->
+    <div class="custom-titlebar">
+      <div class="titlebar-content">
+        <div class="titlebar-title">
+          <i class="fas fa-chart-line"></i>
+          Sistema de Relatórios - Clientes Novotok
+
+          <div class="user-info" id="userInfo" style="display: none">
+            <button
+              class="admin-btn"
+              id="adminBtn"
+              title="Administração de Usuários"
+              style="display: none"
+            >
+              <i class="fas fa-users-cog"></i>
+            </button>
+            <span class="user-name" id="userName"></span>
+            <span class="user-role" id="userRole"></span>
+            <button class="logout-btn" id="logoutBtn" title="Sair">
+              <i class="fas fa-sign-out-alt"></i>
+            </button>
+          </div>
+
+          <!-- Server Status -->
+          <div class="server-status" id="serverStatus">
+            <span id="statusText">Verificando...</span>
+            <button
+              class="settings-btn"
+              id="settingsBtn"
+              title="Configurações da API"
+              style="-webkit-app-region: no-drag;"
+            >
+              <i class="fas fa-cog"></i>
+            </button>
+          </div>
+          
+          <!-- Session Status -->
+          <div class="session-status" id="sessionStatus" style="display: none;">
+            <i class="fas fa-clock"></i>
+            <span id="sessionTime">30:00</span>
+          </div>
+        </div>
+
+        <div class="titlebar-controls">
+          <button class="titlebar-btn minimize-btn" id="minimizeBtn">
+            <svg width="12" height="12" viewBox="0 0 12 12">
+              <path
+                d="M2 6h8"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+          <button class="titlebar-btn maximize-btn" id="maximizeBtn">
+            <svg width="12" height="12" viewBox="0 0 12 12">
+              <rect
+                x="2"
+                y="2"
+                width="8"
+                height="8"
+                stroke="currentColor"
+                stroke-width="1.5"
+                fill="none"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+          <button class="titlebar-btn close-btn" id="closeBtn">
+            <svg width="12" height="12" viewBox="0 0 12 12">
+              <path
+                d="M3 3l6 6M9 3l-6 6"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="app-layout">
+      <!-- Main Content -->
+      <main class="main-content">
+        <!-- Filters Section -->
+        <section class="filters-section">
+          <h2><i class="fas fa-filter"></i> Filtros de Pesquisa</h2>
+          <form id="filterForm" class="filter-form">
+            <div class="form-grid">
+              <!-- Date Range -->
+              <div class="form-group">
+                <label for="startDate">
+                  <i class="fas fa-calendar-alt"></i> Data Início
+                </label>
+                <input type="date" id="startDate" name="startDate" required />
+              </div>
+
+              <div class="form-group">
+                <label for="endDate">
+                  <i class="fas fa-calendar-alt"></i> Data Fim
+                </label>
+                <input type="date" id="endDate" name="endDate" required />
+              </div>
+
+              <!-- Product Code -->
+              <div class="form-group">
+                <label for="productCode">
+                  <i class="fas fa-barcode"></i> Código do Produto
+                </label>
+                <div class="input-with-button">
+                  <input
+                    type="text"
+                    id="productCode"
+                    name="productCode"
+                    placeholder="Ex: 123,456,789 (seleção múltipla)"
+                  />
+                  <button
+                    type="button"
+                    class="lookup-btn"
+                    id="productLookupBtn"
+                  >
+                    <i class="fas fa-search"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Department -->
+              <div class="form-group">
+                <label for="department">
+                  <i class="fas fa-building"></i> Departamento
+                </label>
+                <div class="input-with-button">
+                  <input
+                    type="text"
+                    id="department"
+                    name="department"
+                    placeholder="Digite o código ou clique no ícone para selecionar"
+                  />
+                  <button
+                    type="button"
+                    class="lookup-btn"
+                    id="departmentLookupBtn"
+                  >
+                    <i class="fas fa-list"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Activity -->
+              <div class="form-group">
+                <label for="activity">
+                  <i class="fas fa-briefcase"></i> Atividade
+                </label>
+                <div class="input-with-button">
+                  <input
+                    type="text"
+                    id="activity"
+                    name="activity"
+                    placeholder="Digite o código ou clique no ícone para selecionar"
+                  />
+                  <button
+                    type="button"
+                    class="lookup-btn"
+                    id="activityLookupBtn"
+                  >
+                    <i class="fas fa-list"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Brand -->
+              <div class="form-group">
+                <label for="brand"> <i class="fas fa-tags"></i> Marca </label>
+                <div class="input-with-button">
+                  <input
+                    type="text"
+                    id="brand"
+                    name="brand"
+                    placeholder="Digite o(s) código(s) ou clique no ícone para selecionar (múltiplo)"
+                  />
+                  <button type="button" class="lookup-btn" id="brandLookupBtn">
+                    <i class="fas fa-search"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Branch -->
+              <div class="form-group">
+                <label for="branch">
+                  <i class="fas fa-map-marker-alt"></i> Filial
+                </label>
+                <div class="input-with-button">
+                  <input
+                    type="text"
+                    id="branch"
+                    name="branch"
+                    placeholder="Digite o código ou clique no ícone para selecionar"
+                  />
+                  <button type="button" class="lookup-btn" id="branchLookupBtn">
+                    <i class="fas fa-list"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+              <button type="button" class="btn btn-info" id="testConnectionBtn">
+                <i class="fas fa-database"></i> Testar Conexão
+              </button>
+              <button type="submit" class="btn btn-primary" id="searchBtn">
+                <i class="fas fa-search"></i> Pesquisar
+              </button>
+              <button type="button" class="btn btn-secondary" id="clearBtn">
+                <i class="fas fa-eraser"></i> Limpar
+              </button>
+              <!-- Temporary Admin Panel Button -->
+              <button
+                type="button"
+                class="btn btn-success"
+                id="tempAdminBtn"
+                style="display: none"
+              >
+                <i class="fas fa-users-cog"></i> Admin Panel
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <!-- Results Container -->
+        <div class="results-container">
+          <!-- Results Section -->
+          <section
+            class="results-section"
+            id="resultsSection"
+            style="display: none"
+          >
+            <div class="results-header">
+              <h2><i class="fas fa-table"></i> Resultados da Pesquisa</h2>
+              <div class="results-actions">
+                <div class="column-selection-controls">
+                  <div class="selection-buttons">
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-secondary"
+                      id="selectAllColumns"
+                    >
+                      <i class="fas fa-check-square"></i> Selecionar Todas
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-secondary"
+                      id="deselectAllColumns"
+                    >
+                      <i class="fas fa-square"></i> Deselecionar Todas
+                    </button>
+                  </div>
+                  <small class="export-hint">
+                    <i class="fas fa-info-circle"></i>
+                    Use os checkboxes para escolher colunas para exportar
+                  </small>
+                </div>
+                <span id="recordCount" class="record-count"></span>
+                <button class="btn btn-success" id="exportBtn">
+                  <i class="fas fa-file-excel"></i> Exportar para Excel
+                </button>
+              </div>
+            </div>
+
+            <div class="table-container">
+              <table id="resultsTable" class="data-table">
+                <thead>
+                  <tr>
+                    <th data-column="CODCLI">
+                      <label class="column-checkbox">
+                        <input type="checkbox" checked data-column="CODCLI" />
+                        <span>Código Cliente</span>
+                      </label>
+                    </th>
+                    <th data-column="CLIENTE">
+                      <label class="column-checkbox">
+                        <input type="checkbox" checked data-column="CLIENTE" />
+                        <span>Nome Cliente</span>
+                      </label>
+                    </th>
+                    <th data-column="CODUSUR1">
+                      <label class="column-checkbox">
+                        <input type="checkbox" checked data-column="CODUSUR1" />
+                        <span>Código Vendedor</span>
+                      </label>
+                    </th>
+                    <th data-column="TELCELENT">
+                      <label class="column-checkbox">
+                        <input
+                          type="checkbox"
+                          checked
+                          data-column="TELCELENT"
+                        />
+                        <span>Telefone</span>
+                      </label>
+                    </th>
+                    <th data-column="CGCENT">
+                      <label class="column-checkbox">
+                        <input type="checkbox" data-column="CGCENT" />
+                        <span>CGCENT</span>
+                      </label>
+                    </th>
+                    <th data-column="ENDERENT">
+                      <label class="column-checkbox">
+                        <input type="checkbox" data-column="ENDERENT" />
+                        <span>Endereço</span>
+                      </label>
+                    </th>
+                    <th data-column="BAIRROENT">
+                      <label class="column-checkbox">
+                        <input
+                          type="checkbox"
+                          data-column="BAIRROENT"
+                        />
+                        <span>Bairro</span>
+                      </label>
+                    </th>
+                    <th data-column="MUNICENT">
+                      <label class="column-checkbox">
+                        <input type="checkbox" data-column="MUNICENT" />
+                        <span>Município</span>
+                      </label>
+                    </th>
+                    <th data-column="ESTENT">
+                      <label class="column-checkbox">
+                        <input type="checkbox" data-column="ESTENT" />
+                        <span>Estado</span>
+                      </label>
+                    </th>
+                    <th data-column="CODUSUR2">
+                      <label class="column-checkbox">
+                        <input type="checkbox" data-column="CODUSUR2" />
+                        <span>Vendedor 2</span>
+                      </label>
+                    </th>
+                    <th data-column="QT">
+                      <label class="column-checkbox">
+                        <input type="checkbox" data-column="QT" />
+                        <span>Quantidade</span>
+                      </label>
+                    </th>
+                    <th data-column="VLVENDA">
+                      <label class="column-checkbox">
+                        <input type="checkbox" data-column="VLVENDA" />
+                        <span>Valor Venda</span>
+                      </label>
+                    </th>
+                    <th data-column="VLCUSTOFIN">
+                      <label class="column-checkbox">
+                        <input
+                          type="checkbox"
+                          data-column="VLCUSTOFIN"
+                        />
+                        <span>Custo Financeiro</span>
+                      </label>
+                    </th>
+                    <th data-column="TOTPESO">
+                      <label class="column-checkbox">
+                        <input type="checkbox" data-column="TOTPESO" />
+                        <span>Peso Total</span>
+                      </label>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody id="resultsTableBody">
+                  <!-- Data will be populated here -->
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Loading -->
+          <div id="loading" class="loading" style="display: none">
+            <div class="spinner"></div>
+            <p>Carregando dados...</p>
+          </div>
+
+          <!-- Status Messages -->
+          <div id="statusMessage" class="status-message" style="display: none">
+            <p></p>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Lookup Modal -->
+    <div id="lookupModal" class="modal" style="display: none">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="modalTitle">Selecionar Item</h3>
+          <button class="modal-close" id="modalClose">
+            <svg width="14" height="14" viewBox="0 0 14 14">
+              <path
+                d="M3 3l8 8M11 3l-8 8"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div
+            class="search-container"
+            id="searchContainer"
+            style="display: none"
+          >
+            <input
+              type="text"
+              id="modalSearchInput"
+              placeholder="Digite para pesquisar..."
+            />
+          </div>
+          <div class="lookup-results">
+            <div
+              id="lookupLoading"
+              class="lookup-loading"
+              style="display: none"
+            >
+              <div class="spinner-small"></div>
+              <span>Carregando...</span>
+            </div>
+            <div id="lookupList" class="lookup-list"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="modalCancel">Cancelar</button>
+          <button
+            class="btn btn-primary"
+            id="modalConfirm"
+            style="display: none"
+          >
+            Confirmar Seleção
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="settings-modal">
+      <div class="settings-modal-content">
+        <div class="settings-modal-header">
+          <h3>
+            <i class="fas fa-cog"></i>
+            Configurações da API
+          </h3>
+          <button class="settings-modal-close" id="settingsModalClose">
+            &times;
+          </button>
+        </div>
+        <div class="settings-modal-body">
+          <div class="settings-form-group">
+            <label for="apiUrlInput">URL da API:</label>
+            <input
+              type="url"
+              id="apiUrlInput"
+              placeholder="http://192.168.10.200:3334/api"
+              value="http://192.168.10.200:3334/api"
+            />
+          </div>
+          <div class="settings-form-group">
+            <label>Status da Conexão:</label>
+            <div
+              id="settingsConnectionStatus"
+              style="
+                padding: 8px;
+                border-radius: 5px;
+                font-size: 0.8rem;
+                text-align: center;
+              "
+            >
+              Testando conexão...
+            </div>
+          </div>
+        </div>
+        <div class="settings-modal-footer">
+          <button class="btn btn-secondary" id="settingsCancelBtn">
+            Cancelar
+          </button>
+          <button class="btn btn-primary" id="settingsSaveBtn">
+            <i class="fas fa-save"></i> Salvar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

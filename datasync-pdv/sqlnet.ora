@@ -1,0 +1,7 @@
+# Configuração para forçar autenticação por usuário/senha
+# Resolve erros ORA-12631 e ORA-12638
+SQLNET.AUTHENTICATION_SERVICES = (NONE)
+
+# Configurações adicionais para melhorar conectividade
+SQLNET.EXPIRE_TIME = 10
+NAMES.DIRECTORY_PATH = (TNSNAMES, EZCONNECT)

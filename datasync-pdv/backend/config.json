@@ -1,0 +1,20 @@
+{
+  "externalApi": {
+    "url": "https://novotokapi.online/api/v1",
+    "username": "admin@gmail.com",
+    "password": "@Ntkti1793"
+  },
+  "server": {
+    "port": 3333,
+    "cors": {
+      "enabled": true,
+      "origins": [
+        "*"
+      ]
+    }
+  },
+  "logging": {
+    "enabled": true,
+    "level": "info"
+  }
+}
