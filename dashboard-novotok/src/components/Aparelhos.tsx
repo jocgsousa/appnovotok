@@ -8,7 +8,7 @@ import {
   vincularVendedorAparelho,
   desvincularVendedorAparelho
 } from '../services/aparelhoService';
-import { listarVendedores, Vendedor } from '../services/vendedorService';
+import { listarVendedores, Funcionario as Vendedor } from '../services/funcionariosService';
 import { 
   PermissaoFuncaoApp, 
   obterPermissoesFuncaoApp, 
@@ -621,4 +621,4 @@ const Aparelhos: React.FC = () => {
   );
 };
 
-export default Aparelhos; 
+export default Aparelhos;

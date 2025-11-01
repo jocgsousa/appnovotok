@@ -1,6 +1,6 @@
 <?php
-// Definindo os cabeçalhos CORS explicitamente para este endpoint
-header("Access-Control-Allow-Origin: http://localhost:3000");
+// Incluir configurações CORS globais primeiro
+require_once 'cors_config.php';
 header("Access-Control-Allow-Methods: POST, GET, OPTIONS, PUT");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
 header("Access-Control-Allow-Credentials: true");

@@ -37,7 +37,7 @@ $jwt = $matches[1];
 // Validar o token JWT
 try {
     $payload = decodeJWT($jwt);
-    $usuario_id = $payload->id;
+    $usuario_id = $payload->data->user_id;
 } catch (Exception $e) {
     http_response_code(401);
     echo json_encode([
@@ -91,21 +91,76 @@ try {
         return isset($meses[$mes]) ? $meses[$mes] : 'Mês inválido';
     }
 
-    // Deletar a meta de loja
+    // Iniciar transação para garantir integridade dos dados
+    $conn->beginTransaction();
+
+    // Deletar dados das subseções relacionadas
+    
+    // 1. Deletar metas de produtos de todos os funcionários desta meta
+    $sqlDeleteProdutos = "DELETE FROM meta_loja_produtos WHERE meta_loja_id = ?";
+    $stmtDeleteProdutos = $conn->prepare($sqlDeleteProdutos);
+    $stmtDeleteProdutos->bindValue(1, $meta_id);
+    $stmtDeleteProdutos->execute();
+
+    // 2. Deletar operadoras de caixa
+    $sqlDeleteOperadoras = "DELETE FROM meta_loja_operadoras_caixa WHERE meta_loja_id = ?";
+    $stmtDeleteOperadoras = $conn->prepare($sqlDeleteOperadoras);
+    $stmtDeleteOperadoras->bindValue(1, $meta_id);
+    $stmtDeleteOperadoras->execute();
+
+    // 3. Deletar vendedoras
+    $sqlDeleteVendedoras = "DELETE FROM meta_loja_vendedoras WHERE meta_loja_id = ?";
+    $stmtDeleteVendedoras = $conn->prepare($sqlDeleteVendedoras);
+    $stmtDeleteVendedoras->bindValue(1, $meta_id);
+    $stmtDeleteVendedoras->execute();
+
+    // 4. Deletar vendedoras bijou
+    $sqlDeleteVendedorasBijou = "DELETE FROM meta_loja_vendedoras_bijou WHERE meta_loja_id = ?";
+    $stmtDeleteVendedorasBijou = $conn->prepare($sqlDeleteVendedorasBijou);
+    $stmtDeleteVendedorasBijou->bindValue(1, $meta_id);
+    $stmtDeleteVendedorasBijou->execute();
+
+    // 5. Deletar gerente
+    $sqlDeleteGerente = "DELETE FROM meta_loja_gerente WHERE meta_loja_id = ?";
+    $stmtDeleteGerente = $conn->prepare($sqlDeleteGerente);
+    $stmtDeleteGerente->bindValue(1, $meta_id);
+    $stmtDeleteGerente->execute();
+
+    // 6. Deletar campanhas
+    $sqlDeleteCampanhas = "DELETE FROM meta_loja_campanhas WHERE meta_loja_id = ?";
+    $stmtDeleteCampanhas = $conn->prepare($sqlDeleteCampanhas);
+    $stmtDeleteCampanhas->bindValue(1, $meta_id);
+    $stmtDeleteCampanhas->execute();
+
+    // 7. Deletar funcionários (outros)
+    $sqlDeleteFuncionarios = "DELETE FROM meta_loja_funcionarios WHERE meta_loja_id = ?";
+    $stmtDeleteFuncionarios = $conn->prepare($sqlDeleteFuncionarios);
+    $stmtDeleteFuncionarios->bindValue(1, $meta_id);
+    $stmtDeleteFuncionarios->execute();
+
+    // 8. Deletar a meta de loja principal
     $sqlDelete = "DELETE FROM metas_lojas WHERE id = ?";
     $stmtDelete = $conn->prepare($sqlDelete);
     $stmtDelete->bindValue(1, $meta_id);
     $stmtDelete->execute();
+
+    // Confirmar a transação
+    $conn->commit();
 
     $periodo = getNomeMes((int)$meta['mes']) . '/' . $meta['ano'];
 
     http_response_code(200);
     echo json_encode([
         "status" => 1,
-        "message" => "Meta da loja '" . $meta['nome_loja'] . "' para o período " . $periodo . " excluída com sucesso"
+        "message" => "Meta da loja '" . $meta['nome_loja'] . "' para o período " . $periodo . " e todos os dados relacionados excluídos com sucesso"
     ]);
 
 } catch (Exception $e) {
+    // Fazer rollback da transação em caso de erro
+    if ($conn->inTransaction()) {
+        $conn->rollBack();
+    }
+    
     http_response_code(500);
     echo json_encode([
         "status" => 0,

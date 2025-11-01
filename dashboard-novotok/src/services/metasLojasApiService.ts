@@ -34,41 +34,7 @@ export interface MetaLoja {
   periodo?: string;
 }
 
-export interface OperadoraCaixa {
-  id: string;
-  nome: string;
-  email: string;
-  telefone: string;
-  dataCriacao: string;
-  ativo: boolean;
-}
-
-export interface Vendedora {
-  id: string;
-  nome: string;
-  email: string;
-  telefone: string;
-  dataCriacao: string;
-  ativo: boolean;
-}
-
-export interface VendedoraBijou {
-  id: string;
-  nome: string;
-  email: string;
-  telefone: string;
-  dataCriacao: string;
-  ativo: boolean;
-}
-
-export interface Gerente {
-  id: string;
-  nome: string;
-  email: string;
-  telefone: string;
-  dataCriacao: string;
-  ativo: boolean;
-}
+// Interfaces específicas removidas - agora usamos a interface Vendedor do funcionariosService
 
 export interface MetaProdutoFuncionario {
   id: string;
@@ -108,10 +74,7 @@ export interface FiltrosMetaLoja {
   busca?: string;
 }
 
-export interface FiltrosFuncionario {
-  ativo?: boolean;
-  busca?: string;
-}
+// Interface FiltrosFuncionario removida - não é mais necessária
 
 export interface FiltrosMetaProdutoFuncionario {
   funcionarioId?: string;
@@ -211,6 +174,13 @@ class MetasLojasApiService {
     ano: number;
     grupoMetaId: string;
     ativo?: boolean;
+    operadorasCaixa?: any[];
+    vendedoras?: any[];
+    vendedorasBijou?: any[];
+    gerente?: any;
+    campanhas?: any[];
+    valorVendaLojaTotal?: number;
+    funcionarios?: any[];
   }): Promise<MetaLoja> {
     try {
       const response = await api.post('/cadastrar_meta_loja.php', {
@@ -219,7 +189,14 @@ class MetasLojasApiService {
         mes: meta.mes,
         ano: meta.ano,
         grupo_meta_id: meta.grupoMetaId,
-        ativo: meta.ativo ?? true
+        ativo: meta.ativo ?? true,
+        operadoras_caixa: meta.operadorasCaixa || [],
+        vendedoras: meta.vendedoras || [],
+        vendedoras_bijou: meta.vendedorasBijou || [],
+        gerente: meta.gerente || null,
+        campanhas: meta.campanhas || [],
+        valor_venda_loja_total: meta.valorVendaLojaTotal || 0,
+        funcionarios: meta.funcionarios || []
       });
       return response.data.data;
     } catch (error) {
@@ -235,6 +212,13 @@ class MetasLojasApiService {
     ano: number;
     grupoMetaId: string;
     ativo?: boolean;
+    operadorasCaixa?: any[];
+    vendedoras?: any[];
+    vendedorasBijou?: any[];
+    gerente?: any;
+    campanhas?: any[];
+    valorVendaLojaTotal?: number;
+    funcionarios?: any[];
   }): Promise<MetaLoja> {
     try {
       const response = await api.put('/atualizar_meta_loja.php', {
@@ -244,11 +228,28 @@ class MetasLojasApiService {
         mes: meta.mes,
         ano: meta.ano,
         grupo_meta_id: meta.grupoMetaId,
-        ativo: meta.ativo ?? true
+        ativo: meta.ativo ?? true,
+        operadoras_caixa: meta.operadorasCaixa || [],
+        vendedoras: meta.vendedoras || [],
+        vendedoras_bijou: meta.vendedorasBijou || [],
+        gerente: meta.gerente || null,
+        campanhas: meta.campanhas || [],
+        valor_venda_loja_total: meta.valorVendaLojaTotal || 0,
+        funcionarios: meta.funcionarios || []
       });
       return response.data.data;
     } catch (error) {
       console.error('Erro ao atualizar meta de loja:', error);
+      throw error;
+    }
+  }
+
+  async obterMetaLoja(id: string): Promise<any> {
+    try {
+      const response = await api.get(`/obter_meta_loja.php?id=${id}`);
+      return response.data.data;
+    } catch (error) {
+      console.error('Erro ao obter meta de loja:', error);
       throw error;
     }
   }
@@ -263,62 +264,7 @@ class MetasLojasApiService {
   }
 
   // ========== FUNCIONÁRIOS ==========
-  
-  async listarOperadorasCaixa(filtros?: FiltrosFuncionario): Promise<OperadoraCaixa[]> {
-    try {
-      const params = new URLSearchParams();
-      if (filtros?.ativo !== undefined) params.append('ativo', filtros.ativo.toString());
-      if (filtros?.busca) params.append('busca', filtros.busca);
-
-      const response = await api.get(`/listar_operadoras_caixa.php?${params.toString()}`);
-      return response.data.data || [];
-    } catch (error) {
-      console.error('Erro ao listar operadoras de caixa:', error);
-      throw error;
-    }
-  }
-
-  async listarVendedoras(filtros?: FiltrosFuncionario): Promise<Vendedora[]> {
-    try {
-      const params = new URLSearchParams();
-      if (filtros?.ativo !== undefined) params.append('ativo', filtros.ativo.toString());
-      if (filtros?.busca) params.append('busca', filtros.busca);
-
-      const response = await api.get(`/listar_vendedoras.php?${params.toString()}`);
-      return response.data.data || [];
-    } catch (error) {
-      console.error('Erro ao listar vendedoras:', error);
-      throw error;
-    }
-  }
-
-  async listarVendedorasBijou(filtros?: FiltrosFuncionario): Promise<VendedoraBijou[]> {
-    try {
-      const params = new URLSearchParams();
-      if (filtros?.ativo !== undefined) params.append('ativo', filtros.ativo.toString());
-      if (filtros?.busca) params.append('busca', filtros.busca);
-
-      const response = await api.get(`/listar_vendedoras_bijou.php?${params.toString()}`);
-      return response.data.data || [];
-    } catch (error) {
-      console.error('Erro ao listar vendedoras bijou:', error);
-      throw error;
-    }
-  }
-
-  async listarGerentes(filtros?: FiltrosFuncionario): Promise<Gerente[]> {
-    try {
-      const params = new URLSearchParams();
-      if (filtros?.ativo !== undefined) params.append('ativo', filtros.ativo.toString());
-      if (filtros?.busca) params.append('busca', filtros.busca);
-
-      const response = await api.get(`/listar_gerentes.php?${params.toString()}`);
-      return response.data.data || [];
-    } catch (error) {
-      console.error('Erro ao listar gerentes:', error);
-      throw error;
-    }
-  }
+  // Métodos específicos removidos - agora usamos listarVendedores() do funcionariosService
 
   // ========== METAS DE PRODUTOS INDIVIDUAIS ==========
   

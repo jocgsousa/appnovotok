@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Form, Button, Alert, Spinner, ListGroup } from 'react-bootstrap';
 import { listarDepartamentos, listarSecoes, salvarFiltrosVendedor, obterFiltrosVendedor } from '../services/vendasService';
-import { listarVendedores } from '../services/vendedorService';
+import { listarVendedores } from '../services/funcionariosService';
 
 interface Departamento {
   id: number;
@@ -557,4 +557,4 @@ const VendasFiltros: React.FC = () => {
   );
 };
 
-export default VendasFiltros; 
+export default VendasFiltros;

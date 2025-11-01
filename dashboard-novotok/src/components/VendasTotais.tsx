@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Form, Button, Modal, Spinner, Alert } from 'react-bootstrap';
 import { listarVendasTotais, atualizarVendaTotal, deletarVendaTotal, calcularTotaisVendas, VendaTotal } from '../services/vendasService';
-import { listarVendedores } from '../services/vendedorService';
+import { listarVendedores } from '../services/funcionariosService';
 
 interface Vendedor {
   id: number;
@@ -505,4 +505,4 @@ const VendasTotais: React.FC = () => {
   );
 };
 
-export default VendasTotais; 
+export default VendasTotais;

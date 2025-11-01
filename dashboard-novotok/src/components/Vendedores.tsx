@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Form, Row, Col, Alert, Modal } from 'react-bootstrap';
+import { Card, Button, Form, Row, Col, Alert, Modal } from 'react-bootstrap';
 import { 
   listarVendedores, 
   cadastrarVendedor, 
@@ -7,13 +7,13 @@ import {
   obterVendedor,
   atualizarStatusVendedor, 
   deletarVendedor as excluirVendedor
-} from '../services/vendedorService';
+} from '../services/funcionariosService';
 import { listarFiliais, Filial as FilialType } from '../services/filialService';
 import PageHeader from './PageHeader';
 import ActionButtons from './ActionButtons';
 import ResponsiveTable from './ResponsiveTable';
 
-interface Vendedor {
+interface Funcionario {
   id: number;
   rca: string;
   nome: string;
@@ -28,14 +28,14 @@ interface Vendedor {
   updated_at?: string;
 }
 
-const Vendedores: React.FC = () => {
-  const [vendedores, setVendedores] = useState<Vendedor[]>([]);
+const Funcionarios: React.FC = () => {
+  const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [filiais, setFiliais] = useState<FilialType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   
-  // Estado para o modal de novo vendedor
+  // Estado para o modal de novo funcionário
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({
     rca: '',
@@ -46,7 +46,7 @@ const Vendedores: React.FC = () => {
     ativo: true
   });
 
-  // Estado para o modal de edição de vendedor
+  // Estado para o modal de edição de funcionário
   const [showEditModal, setShowEditModal] = useState(false);
   const [editFormData, setEditFormData] = useState({
     id: 0,
@@ -60,22 +60,22 @@ const Vendedores: React.FC = () => {
   
   const [submitting, setSubmitting] = useState(false);
   
-  // Carregar lista de vendedores e filiais
+  // Carregar lista de funcionários e filiais
   useEffect(() => {
-    loadVendedores();
+    loadFuncionarios();
     loadFiliais();
   }, []);
 
-  const loadVendedores = async () => {
+  const loadFuncionarios = async () => {
     try {
       setLoading(true);
       setError(null);
       
       const data = await listarVendedores();
-      setVendedores(data);
+      setFuncionarios(data);
     } catch (err) {
-      console.error('Erro ao carregar vendedores:', err);
-      setError('Não foi possível carregar a lista de vendedores');
+      console.error('Erro ao carregar funcionários:', err);
+      setError('Não foi possível carregar a lista de funcionários');
     } finally {
       setLoading(false);
     }
@@ -115,19 +115,48 @@ const Vendedores: React.FC = () => {
     }
   };
 
-  // Abrir modal para cadastrar novo vendedor
-  const handleOpenModal = () => {
-    const defaultFilialId = filiais.length > 0 && filiais[0].id ? filiais[0].id.toString() : '1';
-    
+  // Abrir modal para cadastrar novo funcionário
+  const openModal = () => {
     setFormData({
       rca: '',
       nome: '',
       email: '',
       senha: '',
-      filial: defaultFilialId,
+      filial: '1',
       ativo: true
     });
     setShowModal(true);
+  };
+
+  // Abrir modal para editar funcionário
+  const openEditModal = async (id: number) => {
+    try {
+      setError(null);
+      const response = await obterVendedor(id);
+      console.log('Resposta da API obterVendedor:', response);
+      
+      if (!response.success || !response.vendedor) {
+        throw new Error('Dados do funcionário não encontrados');
+      }
+      
+      const funcionario = response.vendedor;
+      
+      const defaultFilialId = filiais.length > 0 && filiais[0]?.id ? filiais[0].id.toString() : '1';
+      setEditFormData({
+        id: funcionario.id,
+        rca: funcionario.rca,
+        nome: funcionario.nome,
+        email: funcionario.email || '',
+        senha: '',
+        filial: funcionario.filial ? funcionario.filial.id.toString() : defaultFilialId,
+        ativo: funcionario.ativo
+      });
+      
+      setShowEditModal(true);
+    } catch (err) {
+      console.error('Erro ao carregar dados do funcionário:', err);
+      setError('Não foi possível carregar os dados do funcionário para edição');
+    }
   };
 
   // Fechar modal
@@ -179,8 +208,8 @@ const Vendedores: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.rca.trim() || !formData.nome.trim() || !formData.senha.trim()) {
-      setError('Preencha todos os campos obrigatórios');
+    if (!formData.nome || !formData.rca || !formData.senha) {
+      setError('Por favor, preencha todos os campos obrigatórios');
       return;
     }
 
@@ -192,31 +221,28 @@ const Vendedores: React.FC = () => {
         ...formData,
         filial_id: parseInt(formData.filial)
       });
-      
+
       if (response.success) {
-        // Fechar o modal primeiro
-        handleCloseModal();
-        // Definir mensagem de sucesso
-        setSuccess('Vendedor cadastrado com sucesso!');
-        // Atualizar a lista de vendedores
-        await loadVendedores();
+        setSuccess('Funcionário cadastrado com sucesso!');
+        // Atualizar a lista de funcionários
+        await loadFuncionarios();
+        setShowModal(false);
       } else {
-        setError(response.message || 'Erro ao cadastrar vendedor');
+        setError(response.message || 'Erro ao cadastrar funcionário');
       }
     } catch (err) {
-      console.error('Erro ao cadastrar vendedor:', err);
-      setError('Não foi possível cadastrar o vendedor');
+      console.error('Erro ao cadastrar funcionário:', err);
+      setError('Não foi possível cadastrar o funcionário');
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Enviar formulário de edição
-  const handleSubmitEdit = async (e: React.FormEvent) => {
+  const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!editFormData.rca.trim() || !editFormData.nome.trim()) {
-      setError('Preencha todos os campos obrigatórios');
+    if (!editFormData.nome || !editFormData.email || !editFormData.rca) {
+      setError('Por favor, preencha todos os campos obrigatórios');
       return;
     }
 
@@ -225,32 +251,27 @@ const Vendedores: React.FC = () => {
       setError(null);
       
       const response = await atualizarVendedor({
-        id: editFormData.id,
-        rca: editFormData.rca,
-        nome: editFormData.nome,
-        email: editFormData.email,
-        senha: editFormData.senha || undefined, // Enviar senha apenas se preenchida
-        filial_id: parseInt(editFormData.filial),
-        ativo: editFormData.ativo
+        ...editFormData,
+        filial_id: parseInt(editFormData.filial)
       });
-      
+
       if (response.success) {
-        setSuccess('Vendedor atualizado com sucesso!');
-        handleCloseEditModal();
-        // Atualiza a lista de vendedores imediatamente após editar
-        await loadVendedores();
+        setSuccess('Funcionário atualizado com sucesso!');
+        setShowEditModal(false);
+        // Atualiza a lista de funcionários imediatamente após editar
+        await loadFuncionarios();
       } else {
-        setError(response.message || 'Erro ao atualizar vendedor');
+        setError(response.message || 'Erro ao atualizar funcionário');
       }
     } catch (err) {
-      console.error('Erro ao atualizar vendedor:', err);
-      setError('Não foi possível atualizar o vendedor');
+      console.error('Erro ao atualizar funcionário:', err);
+      setError('Não foi possível atualizar o funcionário');
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Alternar status do vendedor (ativo/inativo)
+  // Alternar status do funcionário (ativo/inativo)
   const toggleStatus = async (id: number, ativo: boolean) => {
     try {
       setError(null);
@@ -258,36 +279,36 @@ const Vendedores: React.FC = () => {
       const response = await atualizarStatusVendedor(id, !ativo);
       
       if (response.success) {
-        setSuccess(`Vendedor ${!ativo ? 'ativado' : 'desativado'} com sucesso!`);
-        // Atualiza a lista de vendedores imediatamente após alterar o status
-        await loadVendedores();
+        setSuccess(`Funcionário ${!ativo ? 'ativado' : 'desativado'} com sucesso!`);
+        // Atualiza a lista de funcionários imediatamente após alterar o status
+        await loadFuncionarios();
       } else {
-        setError(response.message || 'Erro ao atualizar status do vendedor');
+        setError(response.message || 'Erro ao atualizar status do funcionário');
       }
     } catch (err) {
-      console.error('Erro ao atualizar status do vendedor:', err);
-      setError('Não foi possível atualizar o status do vendedor');
+      console.error('Erro ao atualizar status do funcionário:', err);
+      setError('Não foi possível atualizar o status do funcionário');
     }
   };
 
-  // Deletar vendedor
-  const deletarVendedor = async (id: number) => {
-    if (window.confirm('Tem certeza que deseja excluir este vendedor?')) {
+  // Deletar funcionário
+  const deletarFuncionario = async (id: number) => {
+    if (window.confirm('Tem certeza que deseja excluir este funcionário?')) {
       try {
         setError(null);
         
         const response = await excluirVendedor(id);
         
         if (response.success) {
-          setSuccess('Vendedor excluído com sucesso!');
-          // Atualiza a lista de vendedores imediatamente após excluir
-          await loadVendedores();
+          setSuccess('Funcionário excluído com sucesso!');
+          // Atualiza a lista de funcionários imediatamente após excluir
+          await loadFuncionarios();
         } else {
-          setError(response.message || 'Erro ao excluir vendedor');
+          setError(response.message || 'Erro ao excluir funcionário');
         }
       } catch (err) {
-        console.error('Erro ao excluir vendedor:', err);
-        setError('Não foi possível excluir o vendedor');
+        console.error('Erro ao excluir funcionário:', err);
+        setError('Não foi possível excluir o funcionário');
       }
     }
   };
@@ -311,17 +332,17 @@ const Vendedores: React.FC = () => {
     { 
       header: 'Email', 
       accessor: 'email',
-      cell: (row: Vendedor) => row.email || '-'
+      cell: (row: Funcionario) => row.email || '-'
     },
     { 
       header: 'Filial', 
       accessor: 'filial',
-      cell: (row: Vendedor) => row.filial ? row.filial.nome : '-'
+      cell: (row: Funcionario) => row.filial ? row.filial.nome : '-'
     },
     { 
       header: 'Status', 
       accessor: 'ativo',
-      cell: (row: Vendedor) => (
+      cell: (row: Funcionario) => (
         <span className={`badge ${row.ativo ? 'bg-success' : 'bg-danger'}`}>
           {row.ativo ? 'Ativo' : 'Inativo'}
         </span>
@@ -330,7 +351,7 @@ const Vendedores: React.FC = () => {
     { 
       header: 'Ações', 
       accessor: 'actions',
-      cell: (row: Vendedor) => {
+      cell: (row: Funcionario) => {
         const actionButtons = [
           {
             label: 'Editar',
@@ -348,7 +369,7 @@ const Vendedores: React.FC = () => {
             label: 'Excluir',
             icon: 'trash',
             variant: 'danger',
-            onClick: () => deletarVendedor(row.id)
+            onClick: () => deletarFuncionario(row.id)
           }
         ];
 
@@ -378,10 +399,9 @@ const Vendedores: React.FC = () => {
   return (
     <div className="containerview">
       <PageHeader 
-        title="Vendedores" 
-        buttonText="Novo Vendedor" 
-        buttonIcon="person-plus" 
-        onButtonClick={handleOpenModal} 
+        title="Funcionários" 
+        buttonText="Novo Funcionário" 
+        onButtonClick={openModal}
       />
 
       {error && <Alert variant="danger">{error}</Alert>}
@@ -398,15 +418,15 @@ const Vendedores: React.FC = () => {
         <Card.Body className="p-0 p-md-3">
           <ResponsiveTable 
             columns={columns}
-            data={vendedores}
+            data={funcionarios}
             isLoading={loading}
             loadingComponent={loadingComponent}
             emptyComponent={emptyComponent}
           />
           
-          {vendedores.length > 0 && (
+          {funcionarios.length > 0 && (
             <div className="text-muted mt-3">
-              <small>Total de vendedores: {vendedores.length}</small>
+              <small>Total de vendedores: {funcionarios.length}</small>
             </div>
           )}
         </Card.Body>
@@ -530,7 +550,7 @@ const Vendedores: React.FC = () => {
           <Modal.Title>Editar Vendedor</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          <Form onSubmit={handleSubmitEdit}>
+          <Form onSubmit={handleEditSubmit}>
             <Row>
               <Col md={6}>
                 <Form.Group className="mb-3">
@@ -628,4 +648,4 @@ const Vendedores: React.FC = () => {
   );
 };
 
-export default Vendedores; 
+export default Funcionarios;

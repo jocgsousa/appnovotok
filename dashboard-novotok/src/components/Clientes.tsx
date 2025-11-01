@@ -17,7 +17,7 @@ import {
   RelatorioFiltros
 } from '../services/clienteService';
 import { listarFiliais } from '../services/filiaisService';
-import { listarVendedores } from '../services/vendedorService';
+import { listarVendedores } from '../services/funcionariosService';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title } from 'chart.js';
 import { Pie, Bar } from 'react-chartjs-2';
 

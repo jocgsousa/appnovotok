@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Form, Button, Modal, Spinner, Alert } from 'react-bootstrap';
 import { listarVendasDiarias, atualizarVendaDiaria, deletarVendaDiaria, VendaDiaria } from '../services/vendasService';
-import { listarVendedores } from '../services/vendedorService';
+import { listarVendedores } from '../services/funcionariosService';
 
 interface Vendedor {
   id: number;
@@ -467,4 +467,4 @@ const VendasDiarias: React.FC = () => {
   );
 };
 
-export default VendasDiarias; 
+export default VendasDiarias;

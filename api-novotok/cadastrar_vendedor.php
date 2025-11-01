@@ -1,21 +1,9 @@
 <?php
-// Definindo os cabeçalhos CORS explicitamente para este endpoint
-header("Access-Control-Allow-Origin: http://localhost:3000");
-header("Access-Control-Allow-Methods: POST, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
-header("Access-Control-Allow-Credentials: true");
-
-// Se for uma requisição OPTIONS, retornar imediatamente
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit;
-}
+// Incluir configurações CORS globais primeiro
+require_once 'cors_config.php';
 
 // Definir cabeçalho Content-Type após CORS
 header("Content-Type: application/json");
-
-// Incluir arquivos necessários
-require_once 'cors_config.php';
 require 'database.php';
 include_once 'jwt_utils.php';
 
@@ -104,6 +92,7 @@ try {
 
             http_response_code(201); // Created
             echo json_encode([
+                "success" => true,
                 "message" => "Vendedor cadastrado com sucesso!",
                 "id" => $vendedor_id
             ]);
@@ -119,4 +108,4 @@ try {
     http_response_code(500);
     echo json_encode(["message" => "Falha ao realizar requisição", "Erro:" => $e->getMessage()]);
 }
-?> 
+?>

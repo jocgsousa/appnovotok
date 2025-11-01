@@ -1,6 +1,6 @@
 import api from './api';
 
-export interface Vendedor {
+export interface Funcionario {
   id: number;
   rca: string;
   nome: string;
@@ -16,7 +16,7 @@ export interface Vendedor {
   updated_at?: string;
 }
 
-interface VendedorFormData {
+interface FuncionarioFormData {
   rca: string;
   nome: string;
   email: string;
@@ -25,7 +25,7 @@ interface VendedorFormData {
   ativo: boolean;
 }
 
-interface VendedorUpdateData {
+interface FuncionarioUpdateData {
   id: number;
   rca: string;
   nome: string;
@@ -94,4 +94,4 @@ export const atualizarStatusVendedor = async (id: number, ativo: boolean): Promi
 export const deletarVendedor = async (id: number) => {
   const response = await api.post('/deletar_vendedor.php', { id });
   return response.data;
-}; 
+};

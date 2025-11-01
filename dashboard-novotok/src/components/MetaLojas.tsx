@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import metasLojasApiService from '../services/metasLojasApiService';
-import { listarVendedores } from '../services/vendedoresService';
+import { listarVendedores } from '../services/funcionariosService';
+import { listarFiliais } from '../services/filiaisService';
 import { Container, Row, Col, Card, Button, Form, Table, Modal, Alert, Badge, Tabs, Tab } from 'react-bootstrap';
 import PageHeader from './PageHeader';
 
@@ -8,7 +9,9 @@ import PageHeader from './PageHeader';
 interface Filial {
   id: number;
   codigo: string;
-  nome: string;
+  nome_fantasia: string;
+  razao_social: string;
+  cnpj: string;
 }
 
 interface MetaProduto {
@@ -123,6 +126,8 @@ interface MetaLoja {
   dataInicio: string;
   dataFim: string;
   valorVendaLojaTotal: number;
+  grupoMetaId?: string;
+  grupoMetaNome?: string;
   operadorasCaixa: OperadoraCaixa[];
   vendedoras: Vendedora[];
   vendedorasBijou: VendedoraBijou[];
@@ -151,6 +156,53 @@ const MetaLojas: React.FC = () => {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     });
+  };
+
+  const salvarEdicaoMeta = async () => {
+    if (!metaSelecionada) return;
+    if (!novaMetaFilial || !novaMetaDataInicio || !novaMetaDataFim) {
+      setError('Preencha todos os campos obrigatórios');
+      return;
+    }
+
+    const filialSelecionada = filiais.find(f => f.id.toString() === novaMetaFilial);
+    if (!filialSelecionada) return;
+
+    try {
+      setLoading(true);
+      setError(''); // Limpar erro antes de tentar salvar
+      
+      const payload = {
+        lojaId: filialSelecionada.id.toString(),
+        nomeLoja: filialSelecionada.nome_fantasia,
+        mes: new Date(novaMetaDataInicio).getMonth() + 1,
+        ano: new Date(novaMetaDataInicio).getFullYear(),
+        grupoMetaId: novaMetaGrupoId || metaSelecionada.grupoMetaId || gruposMetas[0]?.id || '1',
+        ativo: metaSelecionada.status !== 'cancelada',
+        // Incluir dados dos funcionários
+        operadorasCaixa: operadorasCaixa,
+        vendedoras: vendedoras,
+        vendedorasBijou: vendedorasBijou,
+        gerente: gerente,
+        campanhas: campanhas,
+        valorVendaLojaTotal: parseFloat(novaMetaValorTotal.replace(/[^\d,]/g, '').replace(',', '.')) || 0,
+        // Manter compatibilidade com funcionários legados
+        funcionarios: funcionarios
+      };
+      
+      await metasLojasApiService.atualizarMetaLoja(metaSelecionada.id, payload);
+      await carregarDados();
+      
+      // Fechar modal e limpar formulário
+      setShowModal(false);
+      limparFormulario();
+      setSuccess('Meta de loja atualizada com sucesso!');
+    } catch (error) {
+      console.error('Erro ao atualizar meta:', error);
+      setError('Erro ao atualizar meta. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Função para converter valor com máscara para número
@@ -211,6 +263,10 @@ const MetaLojas: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [success, setSuccess] = useState<string>('');
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [modalModo, setModalModo] = useState<'criar' | 'editar'>('criar');
+  const [metaSelecionada, setMetaSelecionada] = useState<MetaLoja | null>(null);
 
   // Estados para grupos de metas
   const [gruposMetas, setGruposMetas] = useState<GrupoMetaProduto[]>([]);
@@ -230,8 +286,13 @@ const MetaLojas: React.FC = () => {
     const primeiroDiaDoMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
     return primeiroDiaDoMes.toISOString().split('T')[0];
   });
-  const [novaMetaDataFim, setNovaMetaDataFim] = useState<string>('');
+  const [novaMetaDataFim, setNovaMetaDataFim] = useState<string>(() => {
+    const hoje = new Date();
+    const ultimoDiaDoMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+    return ultimoDiaDoMes.toISOString().split('T')[0];
+  });
   const [novaMetaValorTotal, setNovaMetaValorTotal] = useState<string>('');
+  const [novaMetaGrupoId, setNovaMetaGrupoId] = useState<string>('');
   
   // Estados para os novos tipos de funcionários
   const [operadorasCaixa, setOperadorasCaixa] = useState<OperadoraCaixa[]>([]);
@@ -240,8 +301,8 @@ const MetaLojas: React.FC = () => {
   const [gerente, setGerente] = useState<Gerente | null>(null);
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
   
-  // Estado para controlar a aba ativa
-  const [abaAtiva, setAbaAtiva] = useState<string>('operadoras-caixa');
+  // Estado para controlar a aba ativa (deve corresponder ao eventKey dos Tabs)
+  const [abaAtiva, setAbaAtiva] = useState<string>('operadoras');
   
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
 
@@ -268,6 +329,8 @@ const MetaLojas: React.FC = () => {
         dataInicio: `${meta.ano}-${meta.mes.toString().padStart(2, '0')}-01`,
         dataFim: `${meta.ano}-${meta.mes.toString().padStart(2, '0')}-31`,
         valorVendaLojaTotal: 0, // Este valor precisaria vir de outra fonte
+        grupoMetaId: meta.grupoMetaId,
+        grupoMetaNome: meta.grupoMetaNome,
         operadorasCaixa: [],
         vendedoras: [],
         vendedorasBijou: [],
@@ -289,12 +352,11 @@ const MetaLojas: React.FC = () => {
       const vendedoresData = await listarVendedores();
       setVendedoresAPI(vendedoresData);
 
-      // Mock de filiais (pode ser substituído por uma API real posteriormente)
-      setFiliais([
-        { id: 1, codigo: 'FIL001', nome: 'Filial Centro' },
-        { id: 2, codigo: 'FIL002', nome: 'Filial Shopping' },
-        { id: 3, codigo: 'FIL003', nome: 'Filial Norte' },
-      ]);
+      // Carregar filiais da API
+      const filiaisResponse = await listarFiliais();
+      if (filiaisResponse.success && filiaisResponse.filiais) {
+        setFiliais(filiaisResponse.filiais);
+      }
 
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
@@ -302,6 +364,22 @@ const MetaLojas: React.FC = () => {
       setGruposMetas([]);
       setMetas([]);
     }
+  };
+
+  // Função para filtrar vendedores pela filial selecionada
+  const getVendedoresFiltrados = () => {
+    // Sem filial selecionada: listar todos ativos
+    if (!novaMetaFilial) {
+      return vendedoresAPI.filter(v => v.ativo);
+    }
+    // Com filial selecionada: aceitar match por id ou código, e ignorar vendedores sem filial
+    return vendedoresAPI.filter(v => {
+      if (!v.ativo) return false;
+      if (!v.filial) return false;
+      const filialIdMatch = v.filial.id?.toString() === novaMetaFilial;
+      const filialCodigoMatch = v.filial.codigo?.toString() === novaMetaFilial;
+      return filialIdMatch || filialCodigoMatch;
+    });
   };
 
   // useEffect para calcular automaticamente o % Meta Geral do gerente baseado nas campanhas atingidas
@@ -313,13 +391,13 @@ const MetaLojas: React.FC = () => {
       const novoPercentual = percentualBase + percentualAdicional;
       
       if (gerente.percentualMetaGeral !== novoPercentual) {
-        setGerente({
-          ...gerente,
+        setGerente(prevGerente => prevGerente ? {
+          ...prevGerente,
           percentualMetaGeral: novoPercentual
-        });
+        } : null);
       }
     }
-  }, [campanhas, gerente]);
+  }, [campanhas]); // Removido 'gerente' das dependências para evitar loop infinito
 
   // Filtrar metas
   const metasFiltradas = metas.filter(meta => {
@@ -368,6 +446,36 @@ const MetaLojas: React.FC = () => {
       metasProdutos: []
     };
     setVendedoras([...vendedoras, novaVendedora]);
+  };
+
+  const adicionarTodasVendedorasDaFilial = () => {
+    if (!novaMetaFilial) {
+      setError('Selecione a filial no início do formulário.');
+      return;
+    }
+    const vendedoresFiltrados = getVendedoresFiltrados();
+    const novasVendedoras: Vendedora[] = vendedoresFiltrados
+      .filter(v => !vendedoras.some(existente => existente.nome === v.nome))
+      .map(v => ({
+        id: `${Date.now()}-${v.id}`,
+        nome: v.nome,
+        funcao: 'ATENDENTE DE LOJA',
+        valorVendidoTotal: 0,
+        esmaltes: 0,
+        profissionalParceiras: 0,
+        valorVendidoMake: 0,
+        quantidadeMalka: 0,
+        valorMalka: 0,
+        metasProdutos: []
+      }));
+
+    if (novasVendedoras.length === 0) {
+      setError('Nenhuma vendedora nova para adicionar desta filial.');
+      return;
+    }
+
+    setVendedoras([...vendedoras, ...novasVendedoras]);
+    setError('');
   };
 
   const removerVendedora = (id: string) => {
@@ -524,21 +632,11 @@ const MetaLojas: React.FC = () => {
     setCampanhas(campanhas.map(c => {
       if (c.id === id) {
         const campanhaAtualizada = { ...c, [campo]: valor };
-        
-        // Se mudou o status de atingiu meta, atualizar percentual do gerente
-        if (campo === 'atingiuMeta' && gerente) {
-          const campanhasAtingidas = campanhas.filter(camp => 
-            camp.id === id ? valor : camp.atingiuMeta
-          ).length;
-          
-          const novoPercentual = 0.08 + (campanhasAtingidas * 0.01);
-          setGerente({ ...gerente, percentualMetaGeral: novoPercentual });
-        }
-        
         return campanhaAtualizada;
       }
       return c;
     }));
+    // O percentual do gerente será atualizado automaticamente pelo useEffect
   };
 
   // Função para adicionar funcionário (mantida para compatibilidade)
@@ -612,11 +710,20 @@ const MetaLojas: React.FC = () => {
       
       const novaMetaData = {
         lojaId: filialSelecionada.id.toString(),
-        nomeLoja: filialSelecionada.nome,
+        nomeLoja: filialSelecionada.nome_fantasia,
         mes: new Date(novaMetaDataInicio).getMonth() + 1,
         ano: new Date(novaMetaDataInicio).getFullYear(),
-        grupoMetaId: '1', // Usar um grupo padrão ou permitir seleção
-        ativo: true
+        grupoMetaId: novaMetaGrupoId || gruposMetas[0]?.id || '1',
+        ativo: true,
+        // Incluir dados das seções
+        operadorasCaixa: operadorasCaixa,
+        vendedoras: vendedoras,
+        vendedorasBijou: vendedorasBijou,
+        gerente: gerente,
+        campanhas: campanhas,
+        valorVendaLojaTotal: parseFloat(novaMetaValorTotal.replace(/[^\d,]/g, '').replace(',', '.')) || 0,
+        // Manter compatibilidade com funcionários legados
+        funcionarios: funcionarios
       };
 
       await metasLojasApiService.cadastrarMetaLoja(novaMetaData);
@@ -627,6 +734,7 @@ const MetaLojas: React.FC = () => {
       setShowModal(false);
       limparFormulario();
       setError('');
+      setSuccess('Meta de loja cadastrada com sucesso!');
     } catch (error) {
       console.error('Erro ao salvar meta:', error);
       setError('Erro ao salvar meta. Tente novamente.');
@@ -661,6 +769,7 @@ const MetaLojas: React.FC = () => {
       setNovoGrupo({ nome: '', descricao: '', metas: [] });
       setGrupoEditando(null);
       setError('');
+      setSuccess('Grupo de meta criado com sucesso!');
     } catch (error) {
       console.error('Erro ao criar grupo de meta:', error);
       setError('Erro ao criar grupo de meta. Tente novamente.');
@@ -716,6 +825,7 @@ const MetaLojas: React.FC = () => {
       setNovoGrupo({ nome: '', descricao: '', metas: [] });
       setGrupoEditando(null);
       setError('');
+      setSuccess('Grupo de meta atualizado com sucesso!');
     } catch (error) {
       console.error('Erro ao atualizar grupo de meta:', error);
       setError('Erro ao atualizar grupo de meta. Tente novamente.');
@@ -732,6 +842,7 @@ const MetaLojas: React.FC = () => {
       // Recarregar dados após exclusão
       await carregarDados();
       setError('');
+      setSuccess('Grupo de meta removido com sucesso!');
     } catch (error) {
       console.error('Erro ao remover grupo de meta:', error);
       setError('Erro ao remover grupo de meta. Tente novamente.');
@@ -758,6 +869,7 @@ const MetaLojas: React.FC = () => {
       // Recarregar dados após atualização
       await carregarDados();
       setError('');
+      setSuccess(`Grupo de meta ${!grupo.ativo ? 'ativado' : 'desativado'} com sucesso!`);
     } catch (error) {
       console.error('Erro ao alterar status do grupo:', error);
       setError('Erro ao alterar status do grupo. Tente novamente.');
@@ -823,24 +935,93 @@ const MetaLojas: React.FC = () => {
 
   // Função para limpar formulário
   const limparFormulario = () => {
+    const hoje = new Date();
+    const primeiroDiaDoMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    const ultimoDiaDoMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+
     setNovaMetaFilial('');
-    setNovaMetaDataInicio('');
-    setNovaMetaDataFim('');
+    setNovaMetaDataInicio(primeiroDiaDoMes.toISOString().split('T')[0]);
+    setNovaMetaDataFim(ultimoDiaDoMes.toISOString().split('T')[0]);
     setNovaMetaValorTotal('');
+    setNovaMetaGrupoId('');
     setOperadorasCaixa([]);
     setVendedoras([]);
     setVendedorasBijou([]);
     setGerente(null);
     setCampanhas([]);
     setFuncionarios([]);
-    setAbaAtiva('operadoras-caixa');
+    setAbaAtiva('operadoras');
+    setMetaSelecionada(null);
+    setModalModo('criar');
     setError('');
   };
 
-  // Função para abrir modal
-  const abrirModal = () => {
+  // Função para abrir modal (criar)
+  const abrirModalCriar = () => {
     limparFormulario();
+    setModalModo('criar');
     setShowModal(true);
+  };
+
+  const abrirModalEditar = async (meta: MetaLoja) => {
+    try {
+      setLoading(true);
+      setModalModo('editar');
+      setMetaSelecionada(meta);
+      
+      // Fazer requisição à API para obter dados completos da meta
+      const metaCompleta = await metasLojasApiService.obterMetaLoja(meta.id);
+      
+      // Preencher campos básicos da meta
+      setNovaMetaFilial(metaCompleta.loja_id);
+      setNovaMetaValorTotal(metaCompleta.valor_venda_loja_total.toString());
+      if (metaCompleta.grupo_meta_id) setNovaMetaGrupoId(metaCompleta.grupo_meta_id);
+      
+      // Gerar datas baseadas no mês e ano da meta
+      const ano = metaCompleta.ano;
+      const mes = metaCompleta.mes;
+      const dataInicio = `${ano}-${mes.toString().padStart(2, '0')}-01`;
+      const ultimoDiaDoMes = new Date(ano, mes, 0).getDate();
+      const dataFim = `${ano}-${mes.toString().padStart(2, '0')}-${ultimoDiaDoMes}`;
+      
+      setNovaMetaDataInicio(dataInicio);
+      setNovaMetaDataFim(dataFim);
+      
+      // Carregar dados dos funcionários da meta obtidos da API
+      setOperadorasCaixa(metaCompleta.operadoras_caixa || []);
+      setVendedoras(metaCompleta.vendedoras || []);
+      setVendedorasBijou(metaCompleta.vendedoras_bijou || []);
+      setGerente(metaCompleta.gerente);
+      setCampanhas(metaCompleta.campanhas || []);
+      setFuncionarios(metaCompleta.funcionarios || []);
+      
+      setShowModal(true);
+    } catch (err) {
+      console.error('Erro ao carregar dados da meta:', err);
+      setError('Erro ao carregar dados da meta. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const abrirModalVisualizar = (meta: MetaLoja) => {
+    setMetaSelecionada(meta);
+    setShowViewModal(true);
+  };
+
+  const excluirMeta = async (meta: MetaLoja) => {
+    if (!window.confirm(`Excluir meta da loja ${meta.filialNome} (${meta.periodo})?`)) return;
+    try {
+      setLoading(true);
+      await metasLojasApiService.deletarMetaLoja(meta.id);
+      await carregarDados();
+      setSuccess('Meta de loja excluída com sucesso!');
+    } catch (err) {
+      console.error('Erro ao excluir meta:', err);
+      setError('Erro ao excluir meta. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -859,12 +1040,24 @@ const MetaLojas: React.FC = () => {
           </Button>
           <Button 
             variant="primary"
-            onClick={() => setShowModal(true)}
+            onClick={() => abrirModalCriar()}
           >
             Nova Meta
           </Button>
         </Col>
       </Row>
+
+      {/* Alertas de erro e sucesso */}
+      {error && (
+        <Alert variant="danger" onClose={() => setError('')} dismissible>
+          {error}
+        </Alert>
+      )}
+      {success && (
+        <Alert variant="success" onClose={() => setSuccess('')} dismissible>
+          {success}
+        </Alert>
+      )}
 
       {/* Filtros */}
       <Card className="mb-4">
@@ -883,7 +1076,7 @@ const MetaLojas: React.FC = () => {
                   <option value="">Todas as filiais</option>
                   {filiais.map(filial => (
                     <option key={filial.id} value={filial.id}>
-                      {filial.codigo} - {filial.nome}
+                      {filial.codigo} - {filial.nome_fantasia}
                     </option>
                   ))}
                 </Form.Select>
@@ -956,13 +1149,13 @@ const MetaLojas: React.FC = () => {
                       </Badge>
                     </td>
                     <td>
-                      <Button variant="outline-primary" size="sm" className="me-2">
+                      <Button variant="outline-primary" size="sm" className="me-2" onClick={() => abrirModalVisualizar(meta)}>
                         <i className="bi bi-eye"></i>
                       </Button>
-                      <Button variant="outline-warning" size="sm" className="me-2">
+                      <Button variant="outline-warning" size="sm" className="me-2" onClick={() => abrirModalEditar(meta)}>
                         <i className="bi bi-pencil"></i>
                       </Button>
-                      <Button variant="outline-danger" size="sm">
+                      <Button variant="outline-danger" size="sm" onClick={() => excluirMeta(meta)}>
                         <i className="bi bi-trash"></i>
                       </Button>
                     </td>
@@ -974,10 +1167,10 @@ const MetaLojas: React.FC = () => {
         </Card.Body>
       </Card>
 
-      {/* Modal de Nova Meta */}
+      {/* Modal de Nova/Editar Meta */}
       <Modal show={showModal} onHide={() => setShowModal(false)} size="xl">
         <Modal.Header closeButton>
-          <Modal.Title>Nova Meta de Loja</Modal.Title>
+          <Modal.Title>{modalModo === 'criar' ? 'Nova Meta de Loja' : 'Editar Meta de Loja'}</Modal.Title>
         </Modal.Header>
         <Modal.Body>
           {error && <Alert variant="danger">{error}</Alert>}
@@ -1000,7 +1193,7 @@ const MetaLojas: React.FC = () => {
                       <option value="">Selecione uma filial</option>
                       {filiais.map(filial => (
                         <option key={filial.id} value={filial.id}>
-                          {filial.codigo} - {filial.nome}
+                          {filial.codigo} - {filial.nome_fantasia}
                         </option>
                       ))}
                     </Form.Select>
@@ -1026,6 +1219,25 @@ const MetaLojas: React.FC = () => {
                       onChange={(e) => setNovaMetaDataFim(e.target.value)}
                       required
                     />
+                  </Form.Group>
+                </Col>
+              </Row>
+              <Row>
+                <Col md={6}>
+                  <Form.Group className="mb-3">
+                    <Form.Label>Grupo de Metas *</Form.Label>
+                    <Form.Select 
+                      value={novaMetaGrupoId}
+                      onChange={(e) => setNovaMetaGrupoId(e.target.value)}
+                      required
+                    >
+                      <option value="">Selecione um grupo</option>
+                      {gruposMetas.map(grupo => (
+                        <option key={grupo.id} value={grupo.id}>
+                          {grupo.nome}
+                        </option>
+                      ))}
+                    </Form.Select>
                   </Form.Group>
                 </Col>
               </Row>
@@ -1101,7 +1313,7 @@ const MetaLojas: React.FC = () => {
                                   onChange={(e) => atualizarOperadoraCaixa(operadora.id, 'nome', e.target.value)}
                                 >
                                   <option value="">Selecione uma operadora</option>
-                                  {vendedoresAPI.filter(v => v.ativo).map(vendedor => (
+                                  {getVendedoresFiltrados().map(vendedor => (
                                     <option key={vendedor.id} value={vendedor.nome}>
                                       {vendedor.nome} - {vendedor.rca}
                                     </option>
@@ -1171,10 +1383,16 @@ const MetaLojas: React.FC = () => {
                 <Tab eventKey="vendedoras" title="Vendedoras">
                   <div className="d-flex justify-content-between align-items-center mb-3">
                     <h6 className="mb-0">Vendedoras</h6>
-                    <Button variant="success" size="sm" onClick={adicionarVendedora}>
-                      <i className="bi bi-plus-circle me-2"></i>
-                      Adicionar Vendedora
-                    </Button>
+                    <div>
+                      <Button variant="outline-success" size="sm" className="me-2" onClick={adicionarTodasVendedorasDaFilial}>
+                        <i className="bi bi-people-fill me-2"></i>
+                        Adicionar todos da filial
+                      </Button>
+                      <Button variant="success" size="sm" onClick={adicionarVendedora}>
+                        <i className="bi bi-plus-circle me-2"></i>
+                        Adicionar Vendedora
+                      </Button>
+                    </div>
                   </div>
                   
                   {vendedoras.length === 0 ? (
@@ -1204,7 +1422,7 @@ const MetaLojas: React.FC = () => {
                                   onChange={(e) => atualizarVendedora(vendedora.id, 'nome', e.target.value)}
                                 >
                                   <option value="">Selecione uma vendedora</option>
-                                  {vendedoresAPI.filter(v => v.ativo).map(vendedor => (
+                                  {getVendedoresFiltrados().map(vendedor => (
                                     <option key={vendedor.id} value={vendedor.nome}>
                                       {vendedor.nome} - {vendedor.rca}
                                     </option>
@@ -1353,7 +1571,7 @@ const MetaLojas: React.FC = () => {
                                   onChange={(e) => atualizarVendedoraBijou(vendedora.id, 'nome', e.target.value)}
                                 >
                                   <option value="">Selecione uma vendedora</option>
-                                  {vendedoresAPI.filter(v => v.ativo).map(vendedor => (
+                                  {getVendedoresFiltrados().map(vendedor => (
                                     <option key={vendedor.id} value={vendedor.nome}>
                                       {vendedor.nome} - {vendedor.rca}
                                     </option>
@@ -1446,7 +1664,7 @@ const MetaLojas: React.FC = () => {
                                 onChange={(e) => atualizarGerente('nome', e.target.value)}
                               >
                                 <option value="">Selecione um gerente</option>
-                                {vendedoresAPI.filter(v => v.ativo).map(vendedor => (
+                                {getVendedoresFiltrados().map(vendedor => (
                                   <option key={vendedor.id} value={vendedor.nome}>
                                     {vendedor.nome} - {vendedor.rca}
                                   </option>
@@ -1581,9 +1799,40 @@ const MetaLojas: React.FC = () => {
           <Button variant="secondary" onClick={() => setShowModal(false)}>
             Cancelar
           </Button>
-          <Button variant="primary" onClick={salvarNovaMeta}>
-            Salvar Meta
-          </Button>
+          {modalModo === 'criar' ? (
+            <Button variant="primary" onClick={salvarNovaMeta}>
+              Salvar Meta
+            </Button>
+          ) : (
+            <Button variant="primary" onClick={salvarEdicaoMeta}>
+              Atualizar Meta
+            </Button>
+          )}
+        </Modal.Footer>
+      </Modal>
+
+      {/* Modal de Visualização */}
+      <Modal show={showViewModal} onHide={() => setShowViewModal(false)}>
+        <Modal.Header closeButton>
+          <Modal.Title>Detalhes da Meta</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {metaSelecionada ? (
+            <div>
+              <p><strong>Filial:</strong> {metaSelecionada.filialNome}</p>
+              <p><strong>Período:</strong> {metaSelecionada.periodo}</p>
+              <p><strong>Data Início:</strong> {new Date(metaSelecionada.dataInicio).toLocaleDateString('pt-BR')}</p>
+              <p><strong>Data Fim:</strong> {new Date(metaSelecionada.dataFim).toLocaleDateString('pt-BR')}</p>
+              <p><strong>Grupo de Metas:</strong> {metaSelecionada.grupoMetaNome || '-'}</p>
+              <p><strong>Status:</strong> {metaSelecionada.status}</p>
+              <p><strong>Valor Total:</strong> R$ {metaSelecionada.valorVendaLojaTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+            </div>
+          ) : (
+            <Alert variant="info">Nenhuma meta selecionada.</Alert>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowViewModal(false)}>Fechar</Button>
         </Modal.Footer>
       </Modal>
 

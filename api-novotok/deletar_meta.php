@@ -40,7 +40,7 @@ $jwt = $matches[1];
 // Validar o token JWT
 try {
     $payload = decodeJWT($jwt);
-    $usuario_id = $payload->id; // ID do usuário que está excluindo a meta
+    $usuario_id = $payload->data->user_id; // ID do usuário que está excluindo a meta
 } catch (Exception $e) {
     http_response_code(401);
     echo json_encode([
@@ -144,4 +144,4 @@ if ($stmt->execute()) {
         "message" => "Erro ao excluir meta."
     ]);
 }
-?> 
+?>

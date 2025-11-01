@@ -751,27 +751,39 @@ CREATE TABLE IF NOT EXISTS metas_produtos_grupo (
     INDEX idx_grupo_id (grupo_id)
 );
 
+-- Tabela para armazenar grupos de metas reutilizáveis
+CREATE TABLE IF NOT EXISTS grupos_metas (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL,
+    descricao TEXT,
+    ativo BOOLEAN NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_ativo (ativo)
+);
+
 -- Tabela principal para armazenar metas de lojas/filiais
 CREATE TABLE IF NOT EXISTS metas_lojas (
     id VARCHAR(50) PRIMARY KEY,
-    filial_id INT NOT NULL,
-    filial_nome VARCHAR(100) NOT NULL,
-    periodo VARCHAR(50) NOT NULL,
-    data_inicio DATE NOT NULL,
-    data_fim DATE NOT NULL,
-    valor_venda_loja_total DECIMAL(15,2) NOT NULL DEFAULT 0,
+    loja_id VARCHAR(50) NOT NULL,
+    nome_loja VARCHAR(100) NOT NULL,
+    mes INT NOT NULL COMMENT 'Mês da meta (1-12)',
+    ano INT NOT NULL COMMENT 'Ano da meta',
+    grupo_meta_id VARCHAR(50) NOT NULL,
+    ativo BOOLEAN NOT NULL DEFAULT 1,
     data_criacao DATE NOT NULL,
-    status ENUM('ativa', 'concluida', 'cancelada') NOT NULL DEFAULT 'ativa',
+    valor_venda_loja_total DECIMAL(15,2) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (filial_id) REFERENCES filiais(id) ON DELETE CASCADE,
-    INDEX idx_filial_id (filial_id),
-    INDEX idx_periodo (data_inicio, data_fim),
-    INDEX idx_status (status)
+    INDEX idx_loja_id (loja_id),
+    INDEX idx_mes_ano (mes, ano),
+    INDEX idx_grupo_meta_id (grupo_meta_id),
+    INDEX idx_ativo (ativo),
+    UNIQUE KEY unique_loja_mes_ano (loja_id, mes, ano)
 );
 
 -- Tabela para operadoras de caixa
-CREATE TABLE IF NOT EXISTS operadoras_caixa (
+CREATE TABLE IF NOT EXISTS meta_loja_operadoras_caixa (
     id VARCHAR(50) PRIMARY KEY,
     meta_loja_id VARCHAR(50) NOT NULL,
     nome VARCHAR(100) NOT NULL,
@@ -780,59 +792,78 @@ CREATE TABLE IF NOT EXISTS operadoras_caixa (
     produtos_destaque INT NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (meta_loja_id) REFERENCES metas_lojas(id) ON DELETE CASCADE,
-    INDEX idx_meta_loja_id (meta_loja_id)
+    FOREIGN KEY (meta_loja_id) REFERENCES metas_lojas(id) ON DELETE CASCADE
 );
 
+-- Criar índices para melhor performance
+CREATE INDEX IF NOT EXISTS idx_meta_loja_operadoras_meta_id ON meta_loja_operadoras_caixa(meta_loja_id);
+CREATE INDEX IF NOT EXISTS idx_meta_loja_vendedoras_meta_id ON meta_loja_vendedoras(meta_loja_id);
+CREATE INDEX IF NOT EXISTS idx_meta_loja_vendedoras_bijou_meta_id ON meta_loja_vendedoras_bijou(meta_loja_id);
+CREATE INDEX IF NOT EXISTS idx_meta_loja_campanhas_meta_id ON meta_loja_campanhas(meta_loja_id);
+CREATE INDEX IF NOT EXISTS idx_meta_loja_produtos_meta_id ON meta_loja_produtos(meta_loja_id);
+CREATE INDEX IF NOT EXISTS idx_meta_loja_produtos_funcionario ON meta_loja_produtos(funcionario_id, tipo_funcionario);
+CREATE INDEX IF NOT EXISTS idx_meta_loja_funcionarios_meta_id ON meta_loja_funcionarios(meta_loja_id);
+
 -- Tabela para vendedoras
-CREATE TABLE IF NOT EXISTS vendedoras (
+CREATE TABLE IF NOT EXISTS meta_loja_vendedoras (
     id VARCHAR(50) PRIMARY KEY,
     meta_loja_id VARCHAR(50) NOT NULL,
     nome VARCHAR(100) NOT NULL,
     funcao VARCHAR(50) NOT NULL DEFAULT 'ATENDENTE DE LOJA',
     valor_vendido_total DECIMAL(15,2) NOT NULL DEFAULT 0,
-    esmaltes DECIMAL(15,2) NOT NULL DEFAULT 0,
-    profissional_parceiras DECIMAL(15,2) NOT NULL DEFAULT 0,
+    esmaltes INT NOT NULL DEFAULT 0,
+    profissional_parceiras INT NOT NULL DEFAULT 0,
     valor_vendido_make DECIMAL(15,2) NOT NULL DEFAULT 0,
     quantidade_malka INT NOT NULL DEFAULT 0,
     valor_malka DECIMAL(15,2) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (meta_loja_id) REFERENCES metas_lojas(id) ON DELETE CASCADE,
-    INDEX idx_meta_loja_id (meta_loja_id)
+    FOREIGN KEY (meta_loja_id) REFERENCES metas_lojas(id) ON DELETE CASCADE
 );
 
 -- Tabela para vendedoras bijou
-CREATE TABLE IF NOT EXISTS vendedoras_bijou (
+CREATE TABLE IF NOT EXISTS meta_loja_vendedoras_bijou (
     id VARCHAR(50) PRIMARY KEY,
     meta_loja_id VARCHAR(50) NOT NULL,
     nome VARCHAR(100) NOT NULL,
     funcao VARCHAR(50) NOT NULL DEFAULT 'VENDEDORA BIJOU/MAKE/BOLSAS',
-    bijou_make_bolsas DECIMAL(15,2) NOT NULL DEFAULT 0,
+    bijou_make_bolsas INT NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (meta_loja_id) REFERENCES metas_lojas(id) ON DELETE CASCADE,
-    INDEX idx_meta_loja_id (meta_loja_id)
+    FOREIGN KEY (meta_loja_id) REFERENCES metas_lojas(id) ON DELETE CASCADE
 );
 
--- Tabela para gerentes
-CREATE TABLE IF NOT EXISTS gerentes (
+-- Tabela para gerente
+CREATE TABLE IF NOT EXISTS meta_loja_gerente (
     id VARCHAR(50) PRIMARY KEY,
     meta_loja_id VARCHAR(50) NOT NULL,
     nome VARCHAR(100) NOT NULL,
     funcao VARCHAR(50) NOT NULL DEFAULT 'GERENTE',
-    percentual_meta_geral DECIMAL(5,4) NOT NULL DEFAULT 0.0800,
+    percentual_meta_geral DECIMAL(5,4) NOT NULL DEFAULT 0.08,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (meta_loja_id) REFERENCES metas_lojas(id) ON DELETE CASCADE,
-    INDEX idx_meta_loja_id (meta_loja_id)
+    UNIQUE KEY unique_gerente_meta (meta_loja_id)
 );
 
--- Tabela para metas de produtos individuais (para todos os tipos de funcionários)
-CREATE TABLE IF NOT EXISTS metas_produtos_funcionarios (
+-- Tabela para campanhas
+CREATE TABLE IF NOT EXISTS meta_loja_campanhas (
     id VARCHAR(50) PRIMARY KEY,
+    meta_loja_id VARCHAR(50) NOT NULL,
+    nome VARCHAR(100) NOT NULL,
+    quantidade_vendida INT NOT NULL DEFAULT 0,
+    atingiu_meta BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (meta_loja_id) REFERENCES metas_lojas(id) ON DELETE CASCADE
+);
+
+-- Tabela para metas de produtos (usada por operadoras, vendedoras e vendedoras bijou)
+CREATE TABLE IF NOT EXISTS meta_loja_produtos (
+    id VARCHAR(50) PRIMARY KEY,
+    meta_loja_id VARCHAR(50) NOT NULL,
     funcionario_id VARCHAR(50) NOT NULL,
-    funcionario_tipo ENUM('operadora_caixa', 'vendedora', 'vendedora_bijou') NOT NULL,
+    tipo_funcionario ENUM('operadora', 'vendedora', 'vendedoraBijou') NOT NULL,
     nome_produto_marca VARCHAR(200) NOT NULL,
     qtd_meta INT NOT NULL DEFAULT 0,
     qtd_vendido INT NOT NULL DEFAULT 0,
@@ -841,26 +872,11 @@ CREATE TABLE IF NOT EXISTS metas_produtos_funcionarios (
     valor_comissao DECIMAL(15,2) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_funcionario (funcionario_id, funcionario_tipo),
-    INDEX idx_funcionario_tipo (funcionario_tipo)
+    FOREIGN KEY (meta_loja_id) REFERENCES metas_lojas(id) ON DELETE CASCADE
 );
 
--- Tabela para campanhas
-CREATE TABLE IF NOT EXISTS campanhas_metas (
-    id VARCHAR(50) PRIMARY KEY,
-    meta_loja_id VARCHAR(50) NOT NULL,
-    nome VARCHAR(100) NOT NULL,
-    quantidade_vendida INT NOT NULL DEFAULT 0,
-    atingiu_meta BOOLEAN NOT NULL DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (meta_loja_id) REFERENCES metas_lojas(id) ON DELETE CASCADE,
-    INDEX idx_meta_loja_id (meta_loja_id),
-    INDEX idx_atingiu_meta (atingiu_meta)
-);
-
--- Tabela para manter compatibilidade com funcionários legados
-CREATE TABLE IF NOT EXISTS funcionarios_metas_legado (
+-- Tabela para funcionários legados (mantida para compatibilidade)
+CREATE TABLE IF NOT EXISTS meta_loja_funcionarios (
     id VARCHAR(50) PRIMARY KEY,
     meta_loja_id VARCHAR(50) NOT NULL,
     nome VARCHAR(100) NOT NULL,
@@ -876,18 +892,16 @@ CREATE TABLE IF NOT EXISTS funcionarios_metas_legado (
     valor_malka DECIMAL(15,2) NOT NULL DEFAULT 0,
     bijou_make_bolsas DECIMAL(15,2) NOT NULL DEFAULT 0,
     -- Comissões
-    comissao_esmaltes DECIMAL(5,2) NOT NULL DEFAULT 0,
-    comissao_profissional_parceiras DECIMAL(5,2) NOT NULL DEFAULT 0,
-    comissao_valor_vendido_make DECIMAL(5,2) NOT NULL DEFAULT 0,
-    comissao_quantidade_malka DECIMAL(5,2) NOT NULL DEFAULT 0,
-    comissao_valor_malka DECIMAL(5,2) NOT NULL DEFAULT 0,
-    comissao_bijou_make_bolsas DECIMAL(5,2) NOT NULL DEFAULT 0,
-    comissao_valor_vendido_total DECIMAL(5,2) NOT NULL DEFAULT 0,
-    comissao_cadastros DECIMAL(5,2) NOT NULL DEFAULT 0,
-    comissao_produtos_destaque DECIMAL(5,2) NOT NULL DEFAULT 0,
+    comissao_esmaltes DECIMAL(15,2) NOT NULL DEFAULT 0,
+    comissao_profissional_parceiras DECIMAL(15,2) NOT NULL DEFAULT 0,
+    comissao_valor_vendido_make DECIMAL(15,2) NOT NULL DEFAULT 0,
+    comissao_quantidade_malka DECIMAL(15,2) NOT NULL DEFAULT 0,
+    comissao_valor_malka DECIMAL(15,2) NOT NULL DEFAULT 0,
+    comissao_bijou_make_bolsas DECIMAL(15,2) NOT NULL DEFAULT 0,
+    comissao_valor_vendido_total DECIMAL(15,2) NOT NULL DEFAULT 0,
+    comissao_cadastros DECIMAL(15,2) NOT NULL DEFAULT 0,
+    comissao_produtos_destaque DECIMAL(15,2) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (meta_loja_id) REFERENCES metas_lojas(id) ON DELETE CASCADE,
-    INDEX idx_meta_loja_id (meta_loja_id),
-    INDEX idx_funcao (funcao)
+    FOREIGN KEY (meta_loja_id) REFERENCES metas_lojas(id) ON DELETE CASCADE
 );

@@ -13,7 +13,7 @@ import {
   HistoricoMeta,
   HistoricoMetaResponse
 } from '../services/vendasService';
-import { listarVendedores } from '../services/vendedorService';
+import { listarVendedores } from '../services/funcionariosService';
 
 interface Vendedor {
   id: number;
@@ -903,4 +903,4 @@ const VendasMetas: React.FC = () => {
   );
 };
 
-export default VendasMetas; 
+export default VendasMetas;

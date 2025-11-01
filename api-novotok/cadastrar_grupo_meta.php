@@ -40,7 +40,7 @@ $jwt = $matches[1];
 // Validar o token JWT
 try {
     $payload = decodeJWT($jwt);
-    $usuario_id = $payload->id;
+    $usuario_id = $payload->data->user_id;
 } catch (Exception $e) {
     http_response_code(401);
     echo json_encode([
