@@ -193,9 +193,8 @@ const MetaLojas: React.FC = () => {
       await metasLojasApiService.atualizarMetaLoja(metaSelecionada.id, payload);
       await carregarDados();
       
-      // Fechar modal e limpar formulário
-      setShowModal(false);
-      limparFormulario();
+      // Fechar modal
+      fecharTodosModais();
       setSuccess('Meta de loja atualizada com sucesso!');
     } catch (error) {
       console.error('Erro ao atualizar meta:', error);
@@ -278,6 +277,30 @@ const MetaLojas: React.FC = () => {
     descricao: '',
     metas: [] as Omit<MetaProduto, 'qtdVendido' | 'valorVendido' | 'valorComissao'>[]
   });
+
+  // Fechar e limpar estados de todos os modais
+  const fecharTodosModais = () => {
+    setShowModal(false);
+    setShowViewModal(false);
+    setShowGrupoModal(false);
+    const body = document.body;
+    body.classList.remove('modal-open');
+    body.style.removeProperty('padding-right');
+  };
+
+  // Garantir limpeza de classes quando nenhum modal estiver aberto
+  useEffect(() => {
+    if (!showModal && !showViewModal && !showGrupoModal) {
+      const body = document.body;
+      body.classList.remove('modal-open');
+      body.style.removeProperty('padding-right');
+    }
+    return () => {
+      const body = document.body;
+      body.classList.remove('modal-open');
+      body.style.removeProperty('padding-right');
+    };
+  }, [showModal, showViewModal, showGrupoModal]);
 
   // Estados do formulário de nova meta
   const [novaMetaFilial, setNovaMetaFilial] = useState<string>('');
@@ -731,8 +754,7 @@ const MetaLojas: React.FC = () => {
       // Recarregar dados após cadastro
       await carregarDados();
       
-      setShowModal(false);
-      limparFormulario();
+      fecharTodosModais();
       setError('');
       setSuccess('Meta de loja cadastrada com sucesso!');
     } catch (error) {
@@ -956,6 +978,13 @@ const MetaLojas: React.FC = () => {
     setError('');
   };
 
+  // Limpa o formulário somente após o modal principal ser fechado
+  useEffect(() => {
+    if (!showModal) {
+      limparFormulario();
+    }
+  }, [showModal]);
+
   // Função para abrir modal (criar)
   const abrirModalCriar = () => {
     limparFormulario();
@@ -1168,7 +1197,7 @@ const MetaLojas: React.FC = () => {
       </Card>
 
       {/* Modal de Nova/Editar Meta */}
-      <Modal show={showModal} onHide={() => setShowModal(false)} size="xl">
+      <Modal show={showModal} onHide={fecharTodosModais} size="xl">
         <Modal.Header closeButton>
           <Modal.Title>{modalModo === 'criar' ? 'Nova Meta de Loja' : 'Editar Meta de Loja'}</Modal.Title>
         </Modal.Header>
@@ -1796,7 +1825,7 @@ const MetaLojas: React.FC = () => {
           </Card>
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowModal(false)}>
+          <Button variant="secondary" onClick={fecharTodosModais}>
             Cancelar
           </Button>
           {modalModo === 'criar' ? (
@@ -1812,7 +1841,7 @@ const MetaLojas: React.FC = () => {
       </Modal>
 
       {/* Modal de Visualização */}
-      <Modal show={showViewModal} onHide={() => setShowViewModal(false)}>
+      <Modal show={showViewModal} onHide={fecharTodosModais}>
         <Modal.Header closeButton>
           <Modal.Title>Detalhes da Meta</Modal.Title>
         </Modal.Header>
@@ -1832,7 +1861,7 @@ const MetaLojas: React.FC = () => {
           )}
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowViewModal(false)}>Fechar</Button>
+          <Button variant="secondary" onClick={fecharTodosModais}>Fechar</Button>
         </Modal.Footer>
       </Modal>
 

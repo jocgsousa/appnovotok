@@ -241,8 +241,9 @@ const Funcionarios: React.FC = () => {
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!editFormData.nome || !editFormData.email || !editFormData.rca) {
-      setError('Por favor, preencha todos os campos obrigatórios');
+    // Permitir atualização sem email; exigir apenas Nome e RCA
+    if (!editFormData.nome || !editFormData.rca) {
+      setError('Por favor, preencha os campos obrigatórios: Nome e RCA');
       return;
     }
 
@@ -250,10 +251,24 @@ const Funcionarios: React.FC = () => {
       setSubmitting(true);
       setError(null);
       
-      const response = await atualizarVendedor({
-        ...editFormData,
-        filial_id: parseInt(editFormData.filial)
-      });
+      // Montar payload sem enviar email vazio (não atualiza email se em branco)
+      const payload: any = {
+        id: editFormData.id,
+        rca: editFormData.rca,
+        nome: editFormData.nome,
+        filial_id: parseInt(editFormData.filial),
+        ativo: editFormData.ativo,
+      };
+
+      if (editFormData.email && editFormData.email.trim() !== '') {
+        payload.email = editFormData.email.trim();
+      }
+
+      if (editFormData.senha && editFormData.senha.trim() !== '') {
+        payload.senha = editFormData.senha;
+      }
+
+      const response = await atualizarVendedor(payload);
 
       if (response.success) {
         setSuccess('Funcionário atualizado com sucesso!');

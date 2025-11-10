@@ -199,7 +199,7 @@ try {
     }
 
     // Buscar gerente
-    $sqlGerente = "SELECT id, nome, valor_vendido_total, esmaltes, profissional_parceiras, 
+    $sqlGerente = "SELECT id, nome, funcao, percentual_meta_geral, valor_vendido_total, esmaltes, profissional_parceiras, 
                           valor_vendido_make, quantidade_malka, valor_malka, bijou_make_bolsas 
                    FROM meta_loja_gerente 
                    WHERE meta_loja_id = ?";
@@ -214,7 +214,7 @@ try {
         $gerente = [
             'id' => $gerenteData['id'],
             'nome' => $gerenteData['nome'],
-            'funcao' => 'Gerente', // Valor padrão já que a coluna não existe
+            'funcao' => $gerenteData['funcao'],
             'valorVendidoTotal' => (float)$gerenteData['valor_vendido_total'],
             'esmaltes' => (int)$gerenteData['esmaltes'],
             'profissionalParceiras' => (int)$gerenteData['profissional_parceiras'],
@@ -222,7 +222,7 @@ try {
             'quantidadeMalka' => (int)$gerenteData['quantidade_malka'],
             'valorMalka' => (float)$gerenteData['valor_malka'],
             'bijouMakeBolsas' => (float)$gerenteData['bijou_make_bolsas'],
-            'percentualMetaGeral' => 0.08, // Valor padrão já que a coluna não existe
+            'percentualMetaGeral' => (float)$gerenteData['percentual_meta_geral'],
             'metasProdutos' => $metasProdutos
         ];
     }

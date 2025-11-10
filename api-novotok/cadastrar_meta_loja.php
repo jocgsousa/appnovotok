@@ -218,6 +218,22 @@ try {
     }
 
     // Função para salvar vendedoras
+    // Função para converter valores monetários formatados para números
+    function converterValorMonetario($valor) {
+        if (is_numeric($valor)) {
+            return (float)$valor;
+        }
+        
+        if (is_string($valor)) {
+            // Remove símbolos de moeda, espaços e converte vírgulas para pontos
+            $valor = preg_replace('/[R$\s\xA0\x{00A0}]/u', '', $valor);
+            $valor = str_replace(['.', ','], ['', '.'], $valor);
+            return is_numeric($valor) ? (float)$valor : 0;
+        }
+        
+        return 0;
+    }
+
     function salvarVendedoras($conn, $meta_id, $vendedoras) {
         $sql = "INSERT INTO meta_loja_vendedoras (id, meta_loja_id, nome, funcao, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, quantidade_malka, valor_malka) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
@@ -225,16 +241,25 @@ try {
         
         foreach ($vendedoras as $vendedora) {
             $vendedora_id = uniqid('vendedora_', true);
+            
+            // Mapeamento para aceitar tanto camelCase quanto snake_case
+            $valorVendidoTotal = $vendedora->valorVendidoTotal ?? $vendedora->valor_vendido_total ?? 0;
+            $esmaltes = $vendedora->esmaltes ?? 0;
+            $profissionalParceiras = $vendedora->profissionalParceiras ?? $vendedora->profissional_parceiras ?? 0;
+            $valorVendidoMake = $vendedora->valorVendidoMake ?? $vendedora->valor_vendido_make ?? 0;
+            $quantidadeMalka = $vendedora->quantidadeMalka ?? $vendedora->quantidade_malka ?? 0;
+            $valorMalka = $vendedora->valorMalka ?? $vendedora->valor_malka ?? 0;
+            
             $stmt->bindValue(1, $vendedora_id);
             $stmt->bindValue(2, $meta_id);
             $stmt->bindValue(3, $vendedora->nome ?? '');
             $stmt->bindValue(4, $vendedora->funcao ?? 'ATENDENTE DE LOJA');
-            $stmt->bindValue(5, $vendedora->valor_vendido_total ?? 0);
-            $stmt->bindValue(6, $vendedora->esmaltes ?? 0);
-            $stmt->bindValue(7, $vendedora->profissional_parceiras ?? 0);
-            $stmt->bindValue(8, $vendedora->valor_vendido_make ?? 0);
-            $stmt->bindValue(9, $vendedora->quantidade_malka ?? 0);
-            $stmt->bindValue(10, $vendedora->valor_malka ?? 0);
+            $stmt->bindValue(5, converterValorMonetario($valorVendidoTotal));
+            $stmt->bindValue(6, converterValorMonetario($esmaltes));
+            $stmt->bindValue(7, converterValorMonetario($profissionalParceiras));
+            $stmt->bindValue(8, converterValorMonetario($valorVendidoMake));
+            $stmt->bindValue(9, is_numeric($quantidadeMalka) ? (int)$quantidadeMalka : 0);
+            $stmt->bindValue(10, converterValorMonetario($valorMalka));
             $stmt->execute();
             
             // Salvar metas de produtos da vendedora
@@ -252,11 +277,15 @@ try {
         
         foreach ($vendedoras_bijou as $vendedora) {
             $vendedora_id = uniqid('vendedora_bijou_', true);
+            
+            // Mapeamento para aceitar tanto camelCase quanto snake_case
+            $bijouMakeBolsas = $vendedora->bijouMakeBolsas ?? $vendedora->bijou_make_bolsas ?? 0;
+            
             $stmt->bindValue(1, $vendedora_id);
             $stmt->bindValue(2, $meta_id);
             $stmt->bindValue(3, $vendedora->nome ?? '');
             $stmt->bindValue(4, $vendedora->funcao ?? 'VENDEDORA BIJOU/MAKE/BOLSAS');
-            $stmt->bindValue(5, $vendedora->bijou_make_bolsas ?? 0);
+            $stmt->bindValue(5, converterValorMonetario($bijouMakeBolsas));
             $stmt->execute();
             
             // Salvar metas de produtos da vendedora bijou

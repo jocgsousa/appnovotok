@@ -460,7 +460,8 @@ INSERT INTO menus (nome, descricao, icone, rota, ordem, ativo) VALUES
 ('Usuários', 'Gestão de usuários do sistema', 'admin_panel_settings', '/usuarios', 15, 1),
 ('NPS Dashboard', 'Dashboard com métricas e estatísticas do NPS', 'fas fa-chart-line', '/nps/dashboard', 100, 1),
 ('NPS Campanhas', 'Criar e gerenciar campanhas de pesquisa NPS', 'fas fa-bullhorn', '/nps/campanhas', 102, 1),
-('WhatsApp Instâncias', 'Controle local de instâncias WhatsApp com whatsapp-web.js', 'fas fa-comments', '/whatsapp/instances', 105, 1);
+('WhatsApp Instâncias', 'Controle local de instâncias WhatsApp com whatsapp-web.js', 'fas fa-comments', '/whatsapp/instances', 105, 1),
+('Meta de Lojas', 'Gestão de Metas das Lojas', 'shop', '/meta-lojas', 106, 1);
  
  
 INSERT INTO `filiais` (`id`, `codigo`, `nome_fantasia`, `razao_social`, `cnpj`, `ie`, `telefone`, `email`, `cep`, `logradouro`, `numero`, `complemento`, `created_at`, `updated_at`) VALUES
@@ -795,15 +796,6 @@ CREATE TABLE IF NOT EXISTS meta_loja_operadoras_caixa (
     FOREIGN KEY (meta_loja_id) REFERENCES metas_lojas(id) ON DELETE CASCADE
 );
 
--- Criar índices para melhor performance
-CREATE INDEX IF NOT EXISTS idx_meta_loja_operadoras_meta_id ON meta_loja_operadoras_caixa(meta_loja_id);
-CREATE INDEX IF NOT EXISTS idx_meta_loja_vendedoras_meta_id ON meta_loja_vendedoras(meta_loja_id);
-CREATE INDEX IF NOT EXISTS idx_meta_loja_vendedoras_bijou_meta_id ON meta_loja_vendedoras_bijou(meta_loja_id);
-CREATE INDEX IF NOT EXISTS idx_meta_loja_campanhas_meta_id ON meta_loja_campanhas(meta_loja_id);
-CREATE INDEX IF NOT EXISTS idx_meta_loja_produtos_meta_id ON meta_loja_produtos(meta_loja_id);
-CREATE INDEX IF NOT EXISTS idx_meta_loja_produtos_funcionario ON meta_loja_produtos(funcionario_id, tipo_funcionario);
-CREATE INDEX IF NOT EXISTS idx_meta_loja_funcionarios_meta_id ON meta_loja_funcionarios(meta_loja_id);
-
 -- Tabela para vendedoras
 CREATE TABLE IF NOT EXISTS meta_loja_vendedoras (
     id VARCHAR(50) PRIMARY KEY,
@@ -840,6 +832,13 @@ CREATE TABLE IF NOT EXISTS meta_loja_gerente (
     nome VARCHAR(100) NOT NULL,
     funcao VARCHAR(50) NOT NULL DEFAULT 'GERENTE',
     percentual_meta_geral DECIMAL(5,4) NOT NULL DEFAULT 0.08,
+    valor_vendido_total DECIMAL(15,2) NOT NULL DEFAULT 0,
+    esmaltes INT NOT NULL DEFAULT 0,
+    profissional_parceiras INT NOT NULL DEFAULT 0,
+    valor_vendido_make DECIMAL(15,2) NOT NULL DEFAULT 0,
+    quantidade_malka INT NOT NULL DEFAULT 0,
+    valor_malka DECIMAL(15,2) NOT NULL DEFAULT 0,
+    bijou_make_bolsas INT NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (meta_loja_id) REFERENCES metas_lojas(id) ON DELETE CASCADE,
@@ -851,6 +850,7 @@ CREATE TABLE IF NOT EXISTS meta_loja_campanhas (
     id VARCHAR(50) PRIMARY KEY,
     meta_loja_id VARCHAR(50) NOT NULL,
     nome VARCHAR(100) NOT NULL,
+    descricao TEXT,
     quantidade_vendida INT NOT NULL DEFAULT 0,
     atingiu_meta BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -863,7 +863,7 @@ CREATE TABLE IF NOT EXISTS meta_loja_produtos (
     id VARCHAR(50) PRIMARY KEY,
     meta_loja_id VARCHAR(50) NOT NULL,
     funcionario_id VARCHAR(50) NOT NULL,
-    tipo_funcionario ENUM('operadora', 'vendedora', 'vendedoraBijou') NOT NULL,
+    tipo_funcionario ENUM('operadora_caixa', 'vendedora', 'vendedora_bijou', 'gerente', 'funcionario') NOT NULL,
     nome_produto_marca VARCHAR(200) NOT NULL,
     qtd_meta INT NOT NULL DEFAULT 0,
     qtd_vendido INT NOT NULL DEFAULT 0,
@@ -905,3 +905,12 @@ CREATE TABLE IF NOT EXISTS meta_loja_funcionarios (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (meta_loja_id) REFERENCES metas_lojas(id) ON DELETE CASCADE
 );
+
+-- Criar índices para melhor performance (após criação de todas as tabelas)
+CREATE INDEX idx_meta_loja_operadoras_meta_id ON meta_loja_operadoras_caixa(meta_loja_id);
+CREATE INDEX idx_meta_loja_vendedoras_meta_id ON meta_loja_vendedoras(meta_loja_id);
+CREATE INDEX idx_meta_loja_vendedoras_bijou_meta_id ON meta_loja_vendedoras_bijou(meta_loja_id);
+CREATE INDEX idx_meta_loja_campanhas_meta_id ON meta_loja_campanhas(meta_loja_id);
+CREATE INDEX idx_meta_loja_produtos_meta_id ON meta_loja_produtos(meta_loja_id);
+CREATE INDEX idx_meta_loja_produtos_funcionario ON meta_loja_produtos(funcionario_id, tipo_funcionario);
+CREATE INDEX idx_meta_loja_funcionarios_meta_id ON meta_loja_funcionarios(meta_loja_id);
