@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import metasLojasApiService from '../services/metasLojasApiService';
 import { listarVendedores } from '../services/funcionariosService';
 import { listarFiliais } from '../services/filiaisService';
-import { Container, Row, Col, Card, Button, Form, Table, Modal, Alert, Badge, Tabs, Tab } from 'react-bootstrap';
+import { Container, Row, Col, Card, Button, Form, Table, Modal, Alert, Badge, Tabs, Tab, OverlayTrigger, Tooltip, ButtonGroup } from 'react-bootstrap';
 import PageHeader from './PageHeader';
+import { useAuth } from '../contexts/AuthContext';
 
 // Interfaces
 interface Filial {
@@ -60,6 +61,8 @@ interface VendedoraBijou {
   nome: string;
   funcao: string;
   bijouMakeBolsas: number;
+  percentualComissaoBijou?: number;
+  valorComissaoBijou?: number;
   metasProdutos: MetaProduto[];
 }
 
@@ -139,6 +142,9 @@ interface MetaLoja {
 }
 
 const MetaLojas: React.FC = () => {
+  const { usuario } = useAuth();
+  const isAdmin = usuario?.tipo_usuario === 'admin';
+
   // Função para aplicar máscara monetária
   const aplicarMascaraMonetaria = (valor: string): string => {
     // Remove tudo exceto números
@@ -175,8 +181,15 @@ const MetaLojas: React.FC = () => {
       const payload = {
         lojaId: filialSelecionada.id.toString(),
         nomeLoja: filialSelecionada.nome_fantasia,
-        mes: new Date(novaMetaDataInicio).getMonth() + 1,
-        ano: new Date(novaMetaDataInicio).getFullYear(),
+        // Evitar bugs de timezone: extrair mês/ano diretamente da string 'YYYY-MM-DD'
+        mes: (() => {
+          const parts = (novaMetaDataInicio || '').split('-');
+          return parts.length >= 2 ? Number(parts[1]) : new Date(novaMetaDataInicio).getMonth() + 1;
+        })(),
+        ano: (() => {
+          const parts = (novaMetaDataInicio || '').split('-');
+          return parts.length >= 1 ? Number(parts[0]) : new Date(novaMetaDataInicio).getFullYear();
+        })(),
         grupoMetaId: novaMetaGrupoId || metaSelecionada.grupoMetaId || gruposMetas[0]?.id || '1',
         ativo: metaSelecionada.status !== 'cancelada',
         // Incluir dados dos funcionários
@@ -185,7 +198,7 @@ const MetaLojas: React.FC = () => {
         vendedorasBijou: vendedorasBijou,
         gerente: gerente,
         campanhas: campanhas,
-        valorVendaLojaTotal: parseFloat(novaMetaValorTotal.replace(/[^\d,]/g, '').replace(',', '.')) || 0,
+        valorVendaLojaTotal: parseFloat(novaMetaValorTotal) || 0,
         // Manter compatibilidade com funcionários legados
         funcionarios: funcionarios
       };
@@ -220,6 +233,8 @@ const MetaLojas: React.FC = () => {
     return parseFloat(numeroLimpo.replace(',', '.')) || 0;
   };
 
+  
+
   // Função para formatar número para exibição
   const formatarNumeroParaExibicao = (numero: number): string => {
     if (!numero) return '';
@@ -229,6 +244,25 @@ const MetaLojas: React.FC = () => {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     });
+  };
+
+  // Função para formatar datas 'YYYY-MM-DD' em 'DD/MM/YYYY' sem usar Date()
+  const formatarDataBR = (dateStr: string): string => {
+    if (!dateStr) return '-';
+    if (dateStr.includes('-')) {
+      const [ano, mes, dia] = dateStr.split('-');
+      const d = (dia || '').padStart(2, '0');
+      const m = (mes || '').padStart(2, '0');
+      return `${d}/${m}/${ano}`;
+    }
+    if (dateStr.includes('/')) {
+      const parts = dateStr.split('/');
+      if (parts.length === 3) {
+        const [dia, mes, ano] = parts;
+        return `${dia.padStart(2, '0')}/${mes.padStart(2, '0')}/${ano}`;
+      }
+    }
+    return dateStr;
   };
 
   // Função para lidar com mudanças nos campos monetários
@@ -259,11 +293,13 @@ const MetaLojas: React.FC = () => {
   const [filtroFilial, setFiltroFilial] = useState<string>('');
   const [filtroDataInicio, setFiltroDataInicio] = useState<string>('');
   const [filtroDataFim, setFiltroDataFim] = useState<string>('');
+  const [filtroStatus, setFiltroStatus] = useState<'ativa' | 'concluida' | 'todas'>('ativa');
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
   const [showViewModal, setShowViewModal] = useState(false);
+  const [metaAdminDetalhes, setMetaAdminDetalhes] = useState<any | null>(null);
   const [modalModo, setModalModo] = useState<'criar' | 'editar'>('criar');
   const [metaSelecionada, setMetaSelecionada] = useState<MetaLoja | null>(null);
 
@@ -321,6 +357,24 @@ const MetaLojas: React.FC = () => {
   const [operadorasCaixa, setOperadorasCaixa] = useState<OperadoraCaixa[]>([]);
   const [vendedoras, setVendedoras] = useState<Vendedora[]>([]);
   const [vendedorasBijou, setVendedorasBijou] = useState<VendedoraBijou[]>([]);
+  // Recalcular comissão bijou ao carregar dados ou alterar percentuais/valores
+  useEffect(() => {
+    let changed = false;
+    const recalculado = vendedorasBijou.map(vb => {
+      const bijou = (vb.bijouMakeBolsas ?? (vb as any).bijou_make_bolsas ?? 0) as number;
+      const perc = (vb.percentualComissaoBijou ?? (vb as any).percentual_comissao_bijou ?? 0) as number;
+      const atual = (vb.valorComissaoBijou ?? (vb as any).valor_comissao_bijou) as number | undefined;
+      const somaMetas = (vb.metasProdutos ?? []).reduce((acc: number, m: any) => acc + (m?.valorComissao ?? 0), 0);
+      const calc = ((bijou * perc) / 100) + somaMetas;
+      if (!Number.isFinite(calc)) return vb;
+      const diff = atual == null ? Math.abs(calc) : Math.abs(calc - atual);
+      if (diff > 0.005) { changed = true; return { ...vb, valorComissaoBijou: calc }; }
+      return vb;
+    });
+    if (changed) setVendedorasBijou(recalculado);
+  }, [vendedorasBijou]);
+  // Estado auxiliar para manter o texto mascarado do campo Bijou/Make/Bolsas por vendedora
+  const [bijouInputValores, setBijouInputValores] = useState<Record<string, string>>({});
   const [gerente, setGerente] = useState<Gerente | null>(null);
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
   
@@ -344,30 +398,33 @@ const MetaLojas: React.FC = () => {
       const metasData = await metasLojasApiService.listarMetasLojas();
       
       // Converter os dados da API para o formato esperado pelo componente
-      const metasFormatadas = metasData.map(meta => ({
-        id: meta.id,
-        filialId: parseInt(meta.lojaId) || 0,
-        filialNome: meta.nomeLoja,
-        periodo: `${meta.nomeMes || 'Mês'} ${meta.ano}`,
-        dataInicio: `${meta.ano}-${meta.mes.toString().padStart(2, '0')}-01`,
-        dataFim: `${meta.ano}-${meta.mes.toString().padStart(2, '0')}-31`,
-        valorVendaLojaTotal: 0, // Este valor precisaria vir de outra fonte
-        grupoMetaId: meta.grupoMetaId,
-        grupoMetaNome: meta.grupoMetaNome,
-        operadorasCaixa: [],
-        vendedoras: [],
-        vendedorasBijou: [],
-        gerente: {
-          id: '',
-          nome: '',
-          funcao: 'GERENTE',
-          percentualMetaGeral: 0
-        },
-        campanhas: [],
-        funcionarios: [],
-        dataCriacao: meta.dataCriacao,
-        status: meta.ativo ? 'ativa' as const : 'cancelada' as const
-      }));
+      const metasFormatadas = metasData.map(meta => {
+        const ultimoDiaDoMes = new Date(meta.ano, meta.mes, 0).getDate();
+        return ({
+          id: meta.id,
+          filialId: parseInt(meta.lojaId) || 0,
+          filialNome: meta.nomeLoja,
+          periodo: `${meta.nomeMes || 'Mês'} ${meta.ano}`,
+          dataInicio: `${meta.ano}-${meta.mes.toString().padStart(2, '0')}-01`,
+          dataFim: `${meta.ano}-${meta.mes.toString().padStart(2, '0')}-${String(ultimoDiaDoMes).padStart(2, '0')}`,
+          // Usar o valor total vindo da API; garantir número
+          valorVendaLojaTotal: (meta as any).valorVendaLojaTotal ?? 0,
+          grupoMetaId: meta.grupoMetaId,
+          grupoMetaNome: meta.grupoMetaNome,
+          // Mapear subseções retornadas pelo listar_metas_lojas.php
+          operadorasCaixa: (meta as any).subsecoes?.operadorasCaixa ?? [],
+          vendedoras: (meta as any).subsecoes?.vendedoras ?? [],
+          vendedorasBijou: (meta as any).subsecoes?.vendedorasBijou ?? [],
+          gerente: ((meta as any).subsecoes?.gerente && (meta as any).subsecoes?.gerente.length > 0)
+            ? (meta as any).subsecoes.gerente[0]
+            : null,
+          campanhas: (meta as any).subsecoes?.campanhas ?? [],
+          funcionarios: (meta as any).subsecoes?.funcionarios ?? [],
+          dataCriacao: meta.dataCriacao,
+          // Mapear inativo como concluida (finalizada)
+          status: meta.ativo ? 'ativa' as const : 'concluida' as const
+        });
+      });
 
       setMetas(metasFormatadas);
 
@@ -427,8 +484,12 @@ const MetaLojas: React.FC = () => {
     const filtroFilialMatch = !filtroFilial || meta.filialId.toString() === filtroFilial;
     const filtroDataInicioMatch = !filtroDataInicio || meta.dataInicio >= filtroDataInicio;
     const filtroDataFimMatch = !filtroDataFim || meta.dataFim <= filtroDataFim;
+    const filtroStatusMatch =
+      filtroStatus === 'todas' ||
+      (filtroStatus === 'ativa' && meta.status === 'ativa') ||
+      (filtroStatus === 'concluida' && meta.status === 'concluida');
     
-    return filtroFilialMatch && filtroDataInicioMatch && filtroDataFimMatch;
+    return filtroFilialMatch && filtroDataInicioMatch && filtroDataFimMatch && filtroStatusMatch;
   });
 
   // Funções para Operadoras de Caixa
@@ -518,24 +579,52 @@ const MetaLojas: React.FC = () => {
       nome: '',
       funcao: 'VENDEDORA BIJOU/MAKE/BOLSAS',
       bijouMakeBolsas: 0,
+      percentualComissaoBijou: 0,
+      valorComissaoBijou: 0,
       metasProdutos: []
     };
     setVendedorasBijou([...vendedorasBijou, novaVendedoraBijou]);
+    setBijouInputValores(prev => ({ ...prev, [novaVendedoraBijou.id]: aplicarMascaraMonetaria('0') }));
   };
 
   const removerVendedoraBijou = (id: string) => {
     setVendedorasBijou(vendedorasBijou.filter(vb => vb.id !== id));
+    setBijouInputValores(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
   };
 
   const atualizarVendedoraBijou = (id: string, campo: string, valor: any) => {
-    setVendedorasBijou(vendedorasBijou.map(vb => 
-      vb.id === id ? { ...vb, [campo]: valor } : vb
-    ));
+    setVendedorasBijou(vendedorasBijou.map(vb => {
+      if (vb.id !== id) return vb;
+      const atualizado = { ...vb, [campo]: valor } as VendedoraBijou & any;
+      const bijouValor = (atualizado.bijouMakeBolsas ?? atualizado.bijou_make_bolsas ?? 0) as number;
+      const perc = (atualizado.percentualComissaoBijou ?? atualizado.percentual_comissao_bijou ?? 0) as number;
+      // Recalcular comissão total (bijou + metasProdutos) quando bijouMakeBolsas ou percentual mudar
+      if (campo === 'bijouMakeBolsas' || campo === 'percentualComissaoBijou') {
+        const somaMetas = (atualizado.metasProdutos ?? []).reduce((acc: number, m: any) => acc + (m?.valorComissao ?? 0), 0);
+        atualizado.valorComissaoBijou = ((bijouValor * perc) / 100) + somaMetas;
+      }
+      return atualizado;
+    }));
   };
 
   // Funções para Metas de Produtos
-  const calcularValorComissao = (valorVendido: number, percentualSobreVenda: number): number => {
+  const calcularValorComissaoBase = (valorVendido: number, percentualSobreVenda: number): number => {
     return (valorVendido * percentualSobreVenda) / 100;
+  };
+
+  const calcularValorComissaoMeta = (meta: MetaProduto): number => {
+    if ((meta.qtdVendido || 0) >= (meta.qtdMeta || 0)) {
+      return calcularValorComissaoBase(meta.valorVendido || 0, meta.percentualSobreVenda || 0);
+    }
+    return 0;
+  };
+
+  const somarComissoesMetas = (metas: MetaProduto[]): number => {
+    return (metas || []).reduce((acc, m) => acc + (m.valorComissao || 0), 0);
   };
 
   const adicionarMetaProduto = (funcionarioId: string, tipoFuncionario: 'operadora' | 'vendedora' | 'vendedoraBijou') => {
@@ -554,13 +643,30 @@ const MetaLojas: React.FC = () => {
         op.id === funcionarioId ? { ...op, metasProdutos: [...op.metasProdutos, novaMeta] } : op
       ));
     } else if (tipoFuncionario === 'vendedora') {
-      setVendedoras(vendedoras.map(v => 
-        v.id === funcionarioId ? { ...v, metasProdutos: [...v.metasProdutos, novaMeta] } : v
-      ));
+      setVendedoras(vendedoras.map(v => {
+        if (v.id === funcionarioId) {
+          const metasAtualizadas = [...v.metasProdutos, novaMeta];
+          const soma = somarComissoesMetas(metasAtualizadas);
+          return { ...v, metasProdutos: metasAtualizadas, profissionalParceiras: soma };
+        }
+        return v;
+      }));
     } else if (tipoFuncionario === 'vendedoraBijou') {
-      setVendedorasBijou(vendedorasBijou.map(vb => 
-        vb.id === funcionarioId ? { ...vb, metasProdutos: [...vb.metasProdutos, novaMeta] } : vb
-      ));
+      setVendedorasBijou(vendedorasBijou.map(vb => {
+        if (vb.id === funcionarioId) {
+          const metasAtualizadas = [...vb.metasProdutos, novaMeta];
+          const soma = somarComissoesMetas(metasAtualizadas);
+          const bijouValor = (vb.bijouMakeBolsas ?? (vb as any).bijou_make_bolsas ?? 0) as number;
+          const perc = (vb.percentualComissaoBijou ?? (vb as any).percentual_comissao_bijou ?? 0) as number;
+          const comissaoBijou = (bijouValor * perc) / 100;
+          return { 
+            ...vb, 
+            metasProdutos: metasAtualizadas, 
+            valorComissaoBijou: comissaoBijou + soma 
+          };
+        }
+        return vb;
+      }));
     }
   };
 
@@ -570,29 +676,35 @@ const MetaLojas: React.FC = () => {
         op.id === funcionarioId ? { ...op, metasProdutos: op.metasProdutos.filter(m => m.id !== metaId) } : op
       ));
     } else if (tipoFuncionario === 'vendedora') {
-      setVendedoras(vendedoras.map(v => 
-        v.id === funcionarioId ? { ...v, metasProdutos: v.metasProdutos.filter(m => m.id !== metaId) } : v
-      ));
+      setVendedoras(vendedoras.map(v => {
+        if (v.id === funcionarioId) {
+          const metasAtualizadas = v.metasProdutos.filter(m => m.id !== metaId);
+          const soma = somarComissoesMetas(metasAtualizadas);
+          return { ...v, metasProdutos: metasAtualizadas, profissionalParceiras: soma };
+        }
+        return v;
+      }));
     } else if (tipoFuncionario === 'vendedoraBijou') {
-      setVendedorasBijou(vendedorasBijou.map(vb => 
-        vb.id === funcionarioId ? { ...vb, metasProdutos: vb.metasProdutos.filter(m => m.id !== metaId) } : vb
-      ));
+      setVendedorasBijou(vendedorasBijou.map(vb => {
+        if (vb.id === funcionarioId) {
+          const metasAtualizadas = vb.metasProdutos.filter(m => m.id !== metaId);
+          const soma = somarComissoesMetas(metasAtualizadas);
+          const bijouValor = (vb.bijouMakeBolsas ?? (vb as any).bijou_make_bolsas ?? 0) as number;
+          const perc = (vb.percentualComissaoBijou ?? (vb as any).percentual_comissao_bijou ?? 0) as number;
+          const comissaoBijou = (bijouValor * perc) / 100;
+          return { ...vb, metasProdutos: metasAtualizadas, valorComissaoBijou: comissaoBijou + soma };
+        }
+        return vb;
+      }));
     }
   };
 
   const atualizarMetaProduto = (funcionarioId: string, metaId: string, campo: string, valor: any, tipoFuncionario: 'operadora' | 'vendedora' | 'vendedoraBijou') => {
     const atualizarMeta = (meta: MetaProduto) => {
       if (meta.id === metaId) {
-        const metaAtualizada = { ...meta, [campo]: valor };
-        
-        // Recalcular valor da comissão quando valorVendido ou percentualSobreVenda mudarem
-        if (campo === 'valorVendido' || campo === 'percentualSobreVenda') {
-          metaAtualizada.valorComissao = calcularValorComissao(
-            campo === 'valorVendido' ? valor : meta.valorVendido,
-            campo === 'percentualSobreVenda' ? valor : meta.percentualSobreVenda
-          );
-        }
-        
+        const metaAtualizada: MetaProduto = { ...meta, [campo]: valor } as MetaProduto;
+        // Recalcular valor da comissão considerando a regra de Qtd Vendida ≥ Qtd Meta
+        metaAtualizada.valorComissao = calcularValorComissaoMeta(metaAtualizada);
         return metaAtualizada;
       }
       return meta;
@@ -603,13 +715,26 @@ const MetaLojas: React.FC = () => {
         op.id === funcionarioId ? { ...op, metasProdutos: op.metasProdutos.map(atualizarMeta) } : op
       ));
     } else if (tipoFuncionario === 'vendedora') {
-      setVendedoras(vendedoras.map(v => 
-        v.id === funcionarioId ? { ...v, metasProdutos: v.metasProdutos.map(atualizarMeta) } : v
-      ));
+      setVendedoras(vendedoras.map(v => {
+        if (v.id === funcionarioId) {
+          const metasAtualizadas = v.metasProdutos.map(atualizarMeta);
+          const soma = somarComissoesMetas(metasAtualizadas);
+          return { ...v, metasProdutos: metasAtualizadas, profissionalParceiras: soma };
+        }
+        return v;
+      }));
     } else if (tipoFuncionario === 'vendedoraBijou') {
-      setVendedorasBijou(vendedorasBijou.map(vb => 
-        vb.id === funcionarioId ? { ...vb, metasProdutos: vb.metasProdutos.map(atualizarMeta) } : vb
-      ));
+      setVendedorasBijou(vendedorasBijou.map(vb => {
+        if (vb.id === funcionarioId) {
+          const metasAtualizadas = vb.metasProdutos.map(atualizarMeta);
+          const soma = somarComissoesMetas(metasAtualizadas);
+          const bijouValor = (vb.bijouMakeBolsas ?? (vb as any).bijou_make_bolsas ?? 0) as number;
+          const perc = (vb.percentualComissaoBijou ?? (vb as any).percentual_comissao_bijou ?? 0) as number;
+          const comissaoBijou = (bijouValor * perc) / 100;
+          return { ...vb, metasProdutos: metasAtualizadas, valorComissaoBijou: comissaoBijou + soma };
+        }
+        return vb;
+      }));
     }
   };
 
@@ -734,8 +859,15 @@ const MetaLojas: React.FC = () => {
       const novaMetaData = {
         lojaId: filialSelecionada.id.toString(),
         nomeLoja: filialSelecionada.nome_fantasia,
-        mes: new Date(novaMetaDataInicio).getMonth() + 1,
-        ano: new Date(novaMetaDataInicio).getFullYear(),
+        // Evitar bugs de timezone: extrair mês/ano diretamente da string 'YYYY-MM-DD'
+        mes: (() => {
+          const parts = (novaMetaDataInicio || '').split('-');
+          return parts.length >= 2 ? Number(parts[1]) : new Date(novaMetaDataInicio).getMonth() + 1;
+        })(),
+        ano: (() => {
+          const parts = (novaMetaDataInicio || '').split('-');
+          return parts.length >= 1 ? Number(parts[0]) : new Date(novaMetaDataInicio).getFullYear();
+        })(),
         grupoMetaId: novaMetaGrupoId || gruposMetas[0]?.id || '1',
         ativo: true,
         // Incluir dados das seções
@@ -744,7 +876,7 @@ const MetaLojas: React.FC = () => {
         vendedorasBijou: vendedorasBijou,
         gerente: gerente,
         campanhas: campanhas,
-        valorVendaLojaTotal: parseFloat(novaMetaValorTotal.replace(/[^\d,]/g, '').replace(',', '.')) || 0,
+        valorVendaLojaTotal: parseFloat(novaMetaValorTotal) || 0,
         // Manter compatibilidade com funcionários legados
         funcionarios: funcionarios
       };
@@ -945,13 +1077,26 @@ const MetaLojas: React.FC = () => {
         op.id === funcionarioId ? { ...op, metasProdutos: [...op.metasProdutos, ...metasCompletas] } : op
       ));
     } else if (tipoFuncionario === 'vendedora') {
-      setVendedoras(vendedoras.map(v => 
-        v.id === funcionarioId ? { ...v, metasProdutos: [...v.metasProdutos, ...metasCompletas] } : v
-      ));
+      setVendedoras(vendedoras.map(v => {
+        if (v.id === funcionarioId) {
+          const metasAtualizadas = [...v.metasProdutos, ...metasCompletas];
+          const soma = somarComissoesMetas(metasAtualizadas);
+          return { ...v, metasProdutos: metasAtualizadas, profissionalParceiras: soma };
+        }
+        return v;
+      }));
     } else if (tipoFuncionario === 'vendedoraBijou') {
-      setVendedorasBijou(vendedorasBijou.map(vb => 
-        vb.id === funcionarioId ? { ...vb, metasProdutos: [...vb.metasProdutos, ...metasCompletas] } : vb
-      ));
+      setVendedorasBijou(vendedorasBijou.map(vb => {
+        if (vb.id === funcionarioId) {
+          const metasAtualizadas = [...vb.metasProdutos, ...metasCompletas];
+          const soma = somarComissoesMetas(metasAtualizadas);
+          const bijouValor = (vb.bijouMakeBolsas ?? (vb as any).bijou_make_bolsas ?? 0) as number;
+          const perc = (vb.percentualComissaoBijou ?? (vb as any).percentual_comissao_bijou ?? 0) as number;
+          const comissaoBijou = (bijouValor * perc) / 100;
+          return { ...vb, metasProdutos: metasAtualizadas, valorComissaoBijou: comissaoBijou + soma };
+        }
+        return vb;
+      }));
     }
   };
 
@@ -1021,7 +1166,14 @@ const MetaLojas: React.FC = () => {
       setVendedoras(metaCompleta.vendedoras || []);
       setVendedorasBijou(metaCompleta.vendedoras_bijou || []);
       setGerente(metaCompleta.gerente);
-      setCampanhas(metaCompleta.campanhas || []);
+      // Mapear campanhas para garantir camelCase e valores padrão
+      const campanhasMapeadas = (metaCompleta.campanhas || []).map((c: any) => ({
+        id: c.id,
+        nome: c.nome ?? '',
+        quantidadeVendida: c.quantidadeVendida ?? c.quantidade_vendida ?? 0,
+        atingiuMeta: c.atingiuMeta ?? c.atingiu_meta ?? false,
+      }));
+      setCampanhas(campanhasMapeadas);
       setFuncionarios(metaCompleta.funcionarios || []);
       
       setShowModal(true);
@@ -1033,9 +1185,56 @@ const MetaLojas: React.FC = () => {
     }
   };
 
-  const abrirModalVisualizar = (meta: MetaLoja) => {
+  const abrirModalVisualizar = async (meta: MetaLoja) => {
     setMetaSelecionada(meta);
+    setMetaAdminDetalhes(null);
     setShowViewModal(true);
+    // Para admins, carregar detalhes completos para visualização estruturada
+    if (isAdmin) {
+      try {
+        setLoading(true);
+        const metaCompleta = await metasLojasApiService.obterMetaLoja(meta.id);
+        setMetaAdminDetalhes(metaCompleta);
+      } catch (err) {
+        console.error('Erro ao carregar detalhes completos da meta:', err);
+        setError('Erro ao carregar detalhes completos da meta. Tente novamente.');
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  // Exportar planilha (via API) — apenas para admins
+  const baixarPlanilhaMeta = async (meta: MetaLoja) => {
+    if (!isAdmin) return;
+    try {
+      setLoading(true);
+      const blob = await metasLojasApiService.exportarMetaLojaExcel(meta.id);
+
+      if (!(blob instanceof Blob) || blob.size < 100) {
+        throw new Error('O arquivo gerado parece estar corrompido ou vazio');
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const loja = (meta.filialNome || '').toString().replace(/\s+/g, '_');
+      const mes = new Date(meta.dataInicio).getMonth() + 1;
+      const ano = new Date(meta.dataInicio).getFullYear();
+      const fileName = `meta_loja_${loja}_${mes}_${ano}.xlsx`;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      setSuccess('Planilha exportada com sucesso!');
+    } catch (error: any) {
+      console.error('Erro ao exportar planilha da meta:', error);
+      const msg = error?.message || 'Erro ao exportar planilha. Tente novamente.';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const excluirMeta = async (meta: MetaLoja) => {
@@ -1048,6 +1247,22 @@ const MetaLojas: React.FC = () => {
     } catch (err) {
       console.error('Erro ao excluir meta:', err);
       setError('Erro ao excluir meta. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const finalizarMeta = async (meta: MetaLoja) => {
+    if (!isAdmin) return;
+    if (!window.confirm(`Finalizar meta da loja ${meta.filialNome} (${meta.periodo})?`)) return;
+    try {
+      setLoading(true);
+      await metasLojasApiService.finalizarMetaLoja(meta.id);
+      await carregarDados();
+      setSuccess('Meta finalizada com sucesso!');
+    } catch (err) {
+      console.error('Erro ao finalizar meta:', err);
+      setError('Erro ao finalizar meta. Tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -1131,6 +1346,19 @@ const MetaLojas: React.FC = () => {
                 />
               </Form.Group>
             </Col>
+            <Col md={4} className="mt-3">
+              <Form.Group>
+                <Form.Label>Status</Form.Label>
+                <Form.Select
+                  value={filtroStatus}
+                  onChange={(e) => setFiltroStatus(e.target.value as 'ativa' | 'concluida' | 'todas')}
+                >
+                  <option value="ativa">Ativa</option>
+                  <option value="concluida">Concluída/Finalizada</option>
+                  <option value="todas">Todas</option>
+                </Form.Select>
+              </Form.Group>
+            </Col>
 
           </Row>
         </Card.Body>
@@ -1165,10 +1393,16 @@ const MetaLojas: React.FC = () => {
                   <tr key={meta.id}>
                     <td>{meta.filialNome}</td>
                     <td>{meta.periodo}</td>
-                    <td>{new Date(meta.dataInicio).toLocaleDateString('pt-BR')}</td>
-                    <td>{new Date(meta.dataFim).toLocaleDateString('pt-BR')}</td>
+                <td>{formatarDataBR(meta.dataInicio)}</td>
+                <td>{formatarDataBR(meta.dataFim)}</td>
                     <td>R$ {meta.valorVendaLojaTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                    <td>{meta.funcionarios.length}</td>
+                    <td>{
+                      (meta.operadorasCaixa?.length ?? 0)
+                      + (meta.vendedoras?.length ?? 0)
+                      + (meta.vendedorasBijou?.length ?? 0)
+                      + (meta.funcionarios?.length ?? 0)
+                      + (meta.gerente ? 1 : 0)
+                    }</td>
                     <td>
                       <Badge bg={
                         meta.status === 'ativa' ? 'success' : 
@@ -1178,15 +1412,44 @@ const MetaLojas: React.FC = () => {
                       </Badge>
                     </td>
                     <td>
-                      <Button variant="outline-primary" size="sm" className="me-2" onClick={() => abrirModalVisualizar(meta)}>
-                        <i className="bi bi-eye"></i>
-                      </Button>
-                      <Button variant="outline-warning" size="sm" className="me-2" onClick={() => abrirModalEditar(meta)}>
-                        <i className="bi bi-pencil"></i>
-                      </Button>
-                      <Button variant="outline-danger" size="sm" onClick={() => excluirMeta(meta)}>
-                        <i className="bi bi-trash"></i>
-                      </Button>
+                      <ButtonGroup size="sm" className="gap-1">
+                        <OverlayTrigger placement="top" overlay={<Tooltip>Visualizar</Tooltip>}>
+                          <Button variant="primary" onClick={() => abrirModalVisualizar(meta)}>
+                            <i className="bi bi-eye"></i>
+                            <span className="ms-1">Visualizar</span>
+                          </Button>
+                        </OverlayTrigger>
+                        <OverlayTrigger placement="top" overlay={<Tooltip>Editar</Tooltip>}>
+                          <Button variant="secondary" onClick={() => abrirModalEditar(meta)}>
+                            <i className="bi bi-pencil"></i>
+                            <span className="ms-1">Editar</span>
+                          </Button>
+                        </OverlayTrigger>
+                        {isAdmin && (
+                          <>
+                            <OverlayTrigger placement="top" overlay={<Tooltip>Baixar Planilha</Tooltip>}>
+                              <Button variant="success" onClick={() => baixarPlanilhaMeta(meta)}>
+                                <i className="bi bi-download"></i>
+                                <span className="ms-1">Baixar Planilha</span>
+                              </Button>
+                            </OverlayTrigger>
+                            {meta.status === 'ativa' && (
+                              <OverlayTrigger placement="top" overlay={<Tooltip>Finalizar Meta</Tooltip>}>
+                                <Button variant="warning" onClick={() => finalizarMeta(meta)}>
+                                  <i className="bi bi-check2-circle"></i>
+                                  <span className="ms-1">Finalizar</span>
+                                </Button>
+                              </OverlayTrigger>
+                            )}
+                          </>
+                        )}
+                        <OverlayTrigger placement="top" overlay={<Tooltip>Excluir</Tooltip>}>
+                          <Button variant="danger" onClick={() => excluirMeta(meta)}>
+                            <i className="bi bi-trash"></i>
+                            <span className="ms-1">Excluir</span>
+                          </Button>
+                        </OverlayTrigger>
+                      </ButtonGroup>
                     </td>
                   </tr>
                 ))}
@@ -1413,7 +1676,7 @@ const MetaLojas: React.FC = () => {
                   <div className="d-flex justify-content-between align-items-center mb-3">
                     <h6 className="mb-0">Vendedoras</h6>
                     <div>
-                      <Button variant="outline-success" size="sm" className="me-2" onClick={adicionarTodasVendedorasDaFilial}>
+                      <Button variant="success" size="sm" className="me-2" onClick={adicionarTodasVendedorasDaFilial}>
                         <i className="bi bi-people-fill me-2"></i>
                         Adicionar todos da filial
                       </Button>
@@ -1500,7 +1763,8 @@ const MetaLojas: React.FC = () => {
                                 <Form.Control
                                   type="text"
                                   value={formatarNumeroParaExibicao(vendedora.profissionalParceiras)}
-                                  onChange={(e) => handleInputMonetario(e.target.value, (valor) => atualizarVendedora(vendedora.id, 'profissionalParceiras', valor))}
+                                  readOnly
+                                  className="bg-light"
                                   placeholder="R$ 0,00"
                                 />
                               </Form.Group>
@@ -1622,13 +1886,44 @@ const MetaLojas: React.FC = () => {
                           </Row>
                           <Row>
                             <Col md={6}>
+                          <Form.Group className="mb-3">
+                            <Form.Label>Bijou / Make / Bolsas (R$)</Form.Label>
+                            <Form.Control
+                              type="text"
+                              value={bijouInputValores[vendedora.id] ?? formatarNumeroParaExibicao((vendedora.bijouMakeBolsas ?? (vendedora as any).bijou_make_bolsas ?? 0))}
+                              onChange={(e) => {
+                                const mascarado = aplicarMascaraMonetaria(e.target.value);
+                                setBijouInputValores(prev => ({ ...prev, [vendedora.id]: mascarado }));
+                                const valorNumerico = converterMascaraParaNumero(mascarado);
+                                atualizarVendedoraBijou(vendedora.id, 'bijouMakeBolsas', valorNumerico);
+                              }}
+                              placeholder="R$ 0,00"
+                            />
+                          </Form.Group>
+                            </Col>
+                            <Col md={3}>
                               <Form.Group className="mb-3">
-                                <Form.Label>Bijou / Make / Bolsas (R$)</Form.Label>
+                                <Form.Label>% Comissão</Form.Label>
+                                <Form.Control
+                                  type="number"
+                                  step="0.01"
+                                  value={(vendedora.percentualComissaoBijou ?? (vendedora as any).percentual_comissao_bijou ?? 0)}
+                                  onChange={(e) => {
+                                    const perc = parseFloat(e.target.value) || 0;
+                                    atualizarVendedoraBijou(vendedora.id, 'percentualComissaoBijou', perc);
+                                  }}
+                                  placeholder="0"
+                                />
+                              </Form.Group>
+                            </Col>
+                            <Col md={3}>
+                              <Form.Group className="mb-3">
+                                <Form.Label>Comissão (R$)</Form.Label>
                                 <Form.Control
                                   type="text"
-                                  value={formatarNumeroParaExibicao(vendedora.bijouMakeBolsas)}
-                                  onChange={(e) => handleInputMonetario(e.target.value, (valor) => atualizarVendedoraBijou(vendedora.id, 'bijouMakeBolsas', valor))}
-                                  placeholder="R$ 0,00"
+                                  value={formatarNumeroParaExibicao((vendedora.valorComissaoBijou ?? (vendedora as any).valor_comissao_bijou ?? 0))}
+                                  readOnly
+                                  disabled
                                 />
                               </Form.Group>
                             </Col>
@@ -1729,7 +2024,7 @@ const MetaLojas: React.FC = () => {
                                 {gerente && novaMetaValorTotal && (
                                   <div className="mt-1">
                                     <strong>Valor da comissão: R$ {(
-                                      (parseFloat(novaMetaValorTotal.replace(/[^\d,]/g, '').replace(',', '.')) || 0) * 
+                                      (parseFloat(novaMetaValorTotal) || 0) *
                                       (gerente.percentualMetaGeral / 100)
                                     ).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                                   </div>
@@ -1788,6 +2083,8 @@ const MetaLojas: React.FC = () => {
                                 <Form.Label>Quantidade Vendida</Form.Label>
                                 <Form.Control 
                                   type="number" 
+                                  step="any"
+                                  inputMode="decimal"
                                   value={campanha.quantidadeVendida}
                                   onChange={(e) => atualizarCampanha(campanha.id, 'quantidadeVendida', parseFloat(e.target.value) || 0)}
                                   placeholder="0"
@@ -1841,21 +2138,278 @@ const MetaLojas: React.FC = () => {
       </Modal>
 
       {/* Modal de Visualização */}
-      <Modal show={showViewModal} onHide={fecharTodosModais}>
+      <Modal show={showViewModal} onHide={fecharTodosModais} size={isAdmin ? 'xl' : undefined}>
         <Modal.Header closeButton>
           <Modal.Title>Detalhes da Meta</Modal.Title>
         </Modal.Header>
         <Modal.Body>
           {metaSelecionada ? (
-            <div>
-              <p><strong>Filial:</strong> {metaSelecionada.filialNome}</p>
-              <p><strong>Período:</strong> {metaSelecionada.periodo}</p>
-              <p><strong>Data Início:</strong> {new Date(metaSelecionada.dataInicio).toLocaleDateString('pt-BR')}</p>
-              <p><strong>Data Fim:</strong> {new Date(metaSelecionada.dataFim).toLocaleDateString('pt-BR')}</p>
-              <p><strong>Grupo de Metas:</strong> {metaSelecionada.grupoMetaNome || '-'}</p>
-              <p><strong>Status:</strong> {metaSelecionada.status}</p>
-              <p><strong>Valor Total:</strong> R$ {metaSelecionada.valorVendaLojaTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-            </div>
+            !isAdmin ? (
+              <div>
+                <p><strong>Filial:</strong> {metaSelecionada.filialNome}</p>
+                <p><strong>Período:</strong> {metaSelecionada.periodo}</p>
+                <p><strong>Data Início:</strong> {formatarDataBR(metaSelecionada.dataInicio)}</p>
+                <p><strong>Data Fim:</strong> {formatarDataBR(metaSelecionada.dataFim)}</p>
+                <p><strong>Grupo de Metas:</strong> {metaSelecionada.grupoMetaNome || '-'}</p>
+                <p><strong>Status:</strong> {metaSelecionada.status}</p>
+                <p><strong>Valor Total:</strong> R$ {metaSelecionada.valorVendaLojaTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+              </div>
+            ) : (
+              <div>
+                <Row className="mb-3">
+                  <Col>
+                    <Card>
+                      <Card.Header>
+                        <strong>Resumo da Meta</strong>
+                      </Card.Header>
+                      <Card.Body>
+                        <Row>
+                          <Col md={6}><strong>Loja:</strong> {metaAdminDetalhes?.nome_loja ?? metaSelecionada.filialNome}</Col>
+                          <Col md={3}><strong>Mês:</strong> {(() => {
+                            const ds = metaSelecionada.dataInicio || '';
+                            if (ds.includes('-')) {
+                              const parts = ds.split('-');
+                              return Number(parts[1]);
+                            }
+                            return metaAdminDetalhes?.mes ?? '-';
+                          })()}</Col>
+                          <Col md={3}><strong>Ano:</strong> {(() => {
+                            const ds = metaSelecionada.dataInicio || '';
+                            if (ds.includes('-')) {
+                              const parts = ds.split('-');
+                              return Number(parts[0]);
+                            }
+                            return metaAdminDetalhes?.ano ?? '-';
+                          })()}</Col>
+                        </Row>
+                        <Row className="mt-2">
+                          <Col md={6}><strong>Grupo:</strong> {metaAdminDetalhes?.grupo_meta_nome ?? metaSelecionada.grupoMetaNome ?? '-'}</Col>
+                          <Col md={6}><strong>Status:</strong> {(metaAdminDetalhes?.ativo ?? (metaSelecionada.status !== 'cancelada')) ? 'ativa' : 'cancelada'}</Col>
+                        </Row>
+                        <Row className="mt-2">
+                          <Col md={12}><strong>Valor Total:</strong> R$ {(metaAdminDetalhes?.valor_venda_loja_total ?? metaSelecionada.valorVendaLojaTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</Col>
+                        </Row>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                </Row>
+
+                {(() => {
+                  // Alinhar Operadoras ao layout resumido de Vendedoras
+                  const operadoras = (metaAdminDetalhes?.operadoras_caixa ?? []).filter((op: any) => (op?.metasProdutos ?? []).length > 0);
+                  if (operadoras.length === 0) return null;
+                  return (
+                    <Row className="mb-3">
+                      <Col>
+                        <Card>
+                          <Card.Header>
+                            <strong>Operadoras de Caixa</strong>
+                          </Card.Header>
+                          <Card.Body>
+                            <Table size="sm" responsive>
+                              <thead>
+                                <tr>
+                                  <th>Nome</th>
+                                  <th>Qtd Metas</th>
+                                  <th>Total Comissão</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {operadoras.map((op: any) => {
+                                  const total = (op?.metasProdutos ?? []).reduce((acc: number, mp: any) => {
+                                    const qv = mp?.qtdVendido ?? 0; const qm = mp?.qtdMeta ?? 0; const vv = mp?.valorVendido ?? 0; const p = mp?.percentualSobreVenda ?? 0;
+                                    const c = mp?.valorComissao != null ? mp.valorComissao : (qv >= qm ? (vv * p) / 100 : 0);
+                                    return acc + c;
+                                  }, 0);
+                                  return (
+                                    <tr key={op?.id || op?.nome}>
+                                      <td>{op?.nome}</td>
+                                      <td>{(op?.metasProdutos ?? []).length}</td>
+                                      <td>R$ {Number(total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </Table>
+                          </Card.Body>
+                        </Card>
+                      </Col>
+                    </Row>
+                  );
+                })()}
+
+                {(() => {
+                  const vendedoras = (metaAdminDetalhes?.vendedoras ?? []).filter((v: any) => (v?.metasProdutos ?? []).length > 0);
+                  if (vendedoras.length === 0) return null;
+                  return (
+                    <Row className="mb-3">
+                      <Col>
+                        <Card>
+                          <Card.Header>
+                            <strong>Vendedoras</strong>
+                          </Card.Header>
+                          <Card.Body>
+                            <Table size="sm" responsive>
+                              <thead>
+                                <tr>
+                                  <th>Nome</th>
+                                  <th>Qtd Metas</th>
+                                  <th>Total Comissão</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {vendedoras.map((v: any) => {
+                                  const total = (v?.metasProdutos ?? []).reduce((acc: number, mp: any) => {
+                                    const qv = mp?.qtdVendido ?? 0; const qm = mp?.qtdMeta ?? 0; const vv = mp?.valorVendido ?? 0; const p = mp?.percentualSobreVenda ?? 0;
+                                    const c = mp?.valorComissao != null ? mp.valorComissao : (qv >= qm ? (vv * p) / 100 : 0);
+                                    return acc + c;
+                                  }, 0);
+                                  return (
+                                    <tr key={v?.id || v?.nome}>
+                                      <td>{v?.nome}</td>
+                                      <td>{(v?.metasProdutos ?? []).length}</td>
+                                      <td>R$ {Number(total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </Table>
+                          </Card.Body>
+                        </Card>
+                      </Col>
+                    </Row>
+                  );
+                })()}
+
+                {(() => {
+                  const vendedorasBijou = metaAdminDetalhes?.vendedoras_bijou ?? [];
+                  if (vendedorasBijou.length === 0) return null;
+                  return (
+                    <Row className="mb-3">
+                      <Col>
+                        <Card>
+                          <Card.Header>
+                            <strong>Vendedoras Bijou / Make / Bolsas</strong>
+                          </Card.Header>
+                          <Card.Body>
+                            <Table size="sm" responsive>
+                              <thead>
+                                <tr>
+                                  <th>Nome</th>
+                                  <th>Bijou / Make / Bolsas</th>
+                                  <th>% Comissão</th>
+                                  <th>Comissão (R$)</th>
+                                  <th>Qtd Metas</th>
+                                  <th>Total Comissão</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {vendedorasBijou.map((vb: any) => {
+                                  const metasTotal = (vb?.metasProdutos ?? []).reduce((acc: number, mp: any) => {
+                                    const qv = mp?.qtdVendido ?? 0; const qm = mp?.qtdMeta ?? 0; const vv = mp?.valorVendido ?? 0; const p = mp?.percentualSobreVenda ?? 0;
+                                    const c = mp?.valorComissao != null ? mp.valorComissao : (qv >= qm ? (vv * p) / 100 : 0);
+                                    return acc + c;
+                                  }, 0);
+                                  const bijouValor = Number(vb?.bijouMakeBolsas ?? vb?.bijou_make_bolsas ?? 0);
+                                  const perc = Number(vb?.percentualComissaoBijou ?? vb?.percentual_comissao_bijou ?? 0);
+                                  const bijouComissao = (bijouValor * perc) / 100;
+                                  const total = metasTotal + bijouComissao;
+                                  return (
+                                    <tr key={vb?.id || vb?.nome}>
+                                      <td>{vb?.nome}</td>
+                                      <td>R$ {Number(vb?.bijouMakeBolsas ?? vb?.bijou_make_bolsas ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                      <td>{Number(vb?.percentualComissaoBijou ?? vb?.percentual_comissao_bijou ?? 0)}%</td>
+                                      <td>R$ {Number(vb?.valorComissaoBijou ?? vb?.valor_comissao_bijou ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                      <td>{(vb?.metasProdutos ?? []).length}</td>
+                                      <td>R$ {Number(total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </Table>
+                          </Card.Body>
+                        </Card>
+                      </Col>
+                    </Row>
+                  );
+                })()}
+
+                {(() => {
+                  const g = metaAdminDetalhes?.gerente;
+                  if (!g) return null;
+                  return (
+                    <Row className="mb-3">
+                      <Col>
+                        <Card>
+                          <Card.Header>
+                            <strong>Gerente</strong>
+                          </Card.Header>
+                          <Card.Body>
+                            <Table size="sm" responsive>
+                              <thead>
+                                <tr>
+                                  <th>Nome</th>
+                                  <th>% Meta Geral</th>
+                                  <th>Comissão</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr>
+                                  <td>{g?.nome ?? '-'}</td>
+                                  <td>{g?.percentualMetaGeral ?? 0}%</td>
+                                  <td>
+                                    {(() => {
+                                      const valorTotal = Number(metaAdminDetalhes?.valor_venda_loja_total ?? metaSelecionada.valorVendaLojaTotal ?? 0);
+                                      const percentual = Number(g?.percentualMetaGeral ?? 0);
+                                      const comissao = valorTotal * (percentual / 100);
+                                      return `R$ ${Number(comissao).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                                    })()}
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </Table>
+                          </Card.Body>
+                        </Card>
+                      </Col>
+                    </Row>
+                  );
+                })()}
+
+                <Row>
+                  <Col>
+                    <Card>
+                      <Card.Header>
+                        <strong>Campanhas</strong>
+                      </Card.Header>
+                      <Card.Body>
+                        {(metaAdminDetalhes?.campanhas ?? []).length === 0 ? (
+                          <Alert variant="info">Nenhuma campanha cadastrada.</Alert>
+                        ) : (
+                          <Table size="sm" responsive>
+                            <thead>
+                              <tr>
+                                <th>Nome</th>
+                                <th>Quantidade Vendida</th>
+                                <th>Atingiu Meta</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(metaAdminDetalhes?.campanhas ?? []).map((c: any) => (
+                                <tr key={c?.id || c?.nome}>
+                                  <td>{c?.nome ?? '-'}</td>
+                                  <td>{c?.quantidadeVendida ?? c?.quantidade_vendida ?? 0}</td>
+                                  <td>{(c?.atingiuMeta ?? c?.atingiu_meta) ? 'SIM' : 'NÃO'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </Table>
+                        )}
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                </Row>
+              </div>
+            )
           ) : (
             <Alert variant="info">Nenhuma meta selecionada.</Alert>
           )}
@@ -1903,7 +2457,7 @@ const MetaLojas: React.FC = () => {
                         <td>{new Date(grupo.dataCriacao).toLocaleDateString('pt-BR')}</td>
                         <td>
                           <Button 
-                            variant="outline-primary" 
+                            variant="primary" 
                             size="sm" 
                             className="me-2"
                             onClick={() => editarGrupoMeta(grupo)}
@@ -1911,7 +2465,7 @@ const MetaLojas: React.FC = () => {
                             Editar
                           </Button>
                           <Button 
-                            variant={grupo.ativo ? 'outline-warning' : 'outline-success'} 
+                            variant={grupo.ativo ? 'warning' : 'success'} 
                             size="sm" 
                             className="me-2"
                             onClick={() => toggleAtivoGrupo(grupo.id)}
@@ -1919,11 +2473,11 @@ const MetaLojas: React.FC = () => {
                             {grupo.ativo ? 'Desativar' : 'Ativar'}
                           </Button>
                           <Button 
-                            variant="outline-danger" 
+                            variant="danger" 
                             size="sm"
                             onClick={() => removerGrupoMeta(grupo.id)}
                           >
-                            Excluir
+                            {`Excluir ${grupo.nome}`}
                           </Button>
                         </td>
                       </tr>
@@ -1964,7 +2518,7 @@ const MetaLojas: React.FC = () => {
                   <div className="d-flex justify-content-between align-items-center mb-3">
                     <h5>Metas do Grupo</h5>
                     <Button 
-                      variant="outline-primary" 
+                      variant="primary" 
                       size="sm"
                       onClick={() => adicionarMetaAoGrupo()}
                     >
@@ -2012,7 +2566,7 @@ const MetaLojas: React.FC = () => {
                             </td>
                             <td>
                               <Button 
-                                variant="outline-danger" 
+                                variant="danger" 
                                 size="sm"
                                 onClick={() => removerMetaDoGrupo(meta.id)}
                               >
@@ -2114,7 +2668,7 @@ const MetaLojas: React.FC = () => {
               ))}
             </Form.Select>
             <Button 
-              variant="outline-success" 
+              variant="success" 
               size="sm" 
               onClick={() => onAdicionarMeta(funcionarioId, tipoFuncionario)}
             >
@@ -2209,7 +2763,7 @@ const MetaLojas: React.FC = () => {
                     </td>
                     <td>
                       <Button
-                        variant="outline-danger"
+                        variant="danger"
                         size="sm"
                         onClick={() => onRemoverMeta(funcionarioId, meta.id, tipoFuncionario)}
                       >

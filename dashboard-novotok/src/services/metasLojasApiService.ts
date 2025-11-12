@@ -167,6 +167,16 @@ class MetasLojasApiService {
     }
   }
 
+  // Finalizar meta de loja (marcar como inativa)
+  async finalizarMetaLoja(id: string): Promise<void> {
+    try {
+      await api.patch('/finalizar_meta_loja.php', { id });
+    } catch (error) {
+      console.error('Erro ao finalizar meta de loja:', error);
+      throw error;
+    }
+  }
+
   async cadastrarMetaLoja(meta: {
     lojaId: string;
     nomeLoja: string;
@@ -250,6 +260,46 @@ class MetasLojasApiService {
       return response.data.data;
     } catch (error) {
       console.error('Erro ao obter meta de loja:', error);
+      throw error;
+    }
+  }
+
+  // ========== EXPORTAÇÃO ==========
+  async exportarMetaLojaExcel(id: string): Promise<Blob> {
+    try {
+      const response = await api.get(`/exportar_meta_loja.php`, {
+        params: { id },
+        responseType: 'blob',
+        timeout: 120000
+      });
+
+      // Verificar se retornou um blob válido ou um JSON de erro
+      if (response.data instanceof Blob) {
+        const contentType = response.headers['content-type'];
+        if (contentType && contentType.includes('json')) {
+          const reader = new FileReader();
+          const textPromise = new Promise<string>((resolve) => {
+            reader.onload = () => resolve(reader.result as string);
+          });
+          reader.readAsText(response.data);
+          const text = await textPromise;
+          try {
+            const errorData = JSON.parse(text);
+            if (!errorData.success && errorData.message) {
+              throw new Error(errorData.message);
+            }
+          } catch (e) {
+            if (response.data.size < 100) {
+              throw new Error('O arquivo gerado está corrompido ou vazio');
+            }
+          }
+        }
+        return response.data as Blob;
+      } else {
+        throw new Error('Resposta inválida da API de exportação');
+      }
+    } catch (error) {
+      console.error('Erro ao exportar meta da loja:', error);
       throw error;
     }
   }

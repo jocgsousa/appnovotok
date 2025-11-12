@@ -271,8 +271,8 @@ try {
 
     // Função para salvar vendedoras bijou
     function salvarVendedorasBijou($conn, $meta_id, $vendedoras_bijou) {
-        $sql = "INSERT INTO meta_loja_vendedoras_bijou (id, meta_loja_id, nome, funcao, bijou_make_bolsas) 
-                VALUES (?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO meta_loja_vendedoras_bijou (id, meta_loja_id, nome, funcao, bijou_make_bolsas, percentual_comissao_bijou, valor_comissao_bijou) 
+                VALUES (?, ?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
         
         foreach ($vendedoras_bijou as $vendedora) {
@@ -280,12 +280,16 @@ try {
             
             // Mapeamento para aceitar tanto camelCase quanto snake_case
             $bijouMakeBolsas = $vendedora->bijouMakeBolsas ?? $vendedora->bijou_make_bolsas ?? 0;
+            $percentualComissaoBijou = $vendedora->percentualComissaoBijou ?? $vendedora->percentual_comissao_bijou ?? 0;
+            $valorComissaoBijou = $vendedora->valorComissaoBijou ?? $vendedora->valor_comissao_bijou ?? 0;
             
             $stmt->bindValue(1, $vendedora_id);
             $stmt->bindValue(2, $meta_id);
             $stmt->bindValue(3, $vendedora->nome ?? '');
             $stmt->bindValue(4, $vendedora->funcao ?? 'VENDEDORA BIJOU/MAKE/BOLSAS');
             $stmt->bindValue(5, converterValorMonetario($bijouMakeBolsas));
+            $stmt->bindValue(6, is_numeric($percentualComissaoBijou) ? (float)$percentualComissaoBijou : 0);
+            $stmt->bindValue(7, converterValorMonetario($valorComissaoBijou));
             $stmt->execute();
             
             // Salvar metas de produtos da vendedora bijou
@@ -325,8 +329,8 @@ try {
 
     // Função para salvar campanhas
     function salvarCampanhas($conn, $meta_id, $campanhas) {
-        $sql = "INSERT INTO meta_loja_campanhas (id, meta_loja_id, nome, descricao) 
-                VALUES (?, ?, ?, ?)";
+        $sql = "INSERT INTO meta_loja_campanhas (id, meta_loja_id, nome, descricao, quantidade_vendida, atingiu_meta) 
+                VALUES (?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
         
         foreach ($campanhas as $campanha) {
@@ -335,6 +339,18 @@ try {
             $stmt->bindValue(2, $meta_id);
             $stmt->bindValue(3, $campanha->nome ?? '');
             $stmt->bindValue(4, $campanha->descricao ?? '');
+            // Aceitar tanto camelCase quanto snake_case
+            $quantidadeVendida = null;
+            if (is_array($campanha)) {
+                $quantidadeVendida = $campanha['quantidadeVendida'] ?? $campanha['quantidade_vendida'] ?? 0;
+                $atingiuMeta = $campanha['atingiuMeta'] ?? $campanha['atingiu_meta'] ?? false;
+            } else {
+                $quantidadeVendida = $campanha->quantidadeVendida ?? $campanha->quantidade_vendida ?? 0;
+                $atingiuMeta = $campanha->atingiuMeta ?? $campanha->atingiu_meta ?? false;
+            }
+            // Preservar decimais ao salvar quantidade_vendida
+            $stmt->bindValue(5, (float)$quantidadeVendida);
+            $stmt->bindValue(6, $atingiuMeta ? 1 : 0, PDO::PARAM_INT);
             $stmt->execute();
         }
     }

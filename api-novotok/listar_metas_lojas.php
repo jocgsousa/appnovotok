@@ -243,7 +243,8 @@ try {
             'grupoMetaId' => $meta['grupo_meta_id'],
             'grupoMetaNome' => $meta['grupo_meta_nome'],
             'grupoMetaDescricao' => $meta['grupo_meta_descricao'],
-            'valorVendaLojaTotal' => $meta['valor_venda_loja_total'] ? (float)$meta['valor_venda_loja_total'] : null,
+            // Garantir retorno numérico mesmo quando for 0 ou vazio
+            'valorVendaLojaTotal' => is_numeric($meta['valor_venda_loja_total']) ? (float)$meta['valor_venda_loja_total'] : 0.0,
             'ativo' => (bool)$meta['ativo'],
             'dataCriacao' => $meta['data_criacao'],
             'subsecoes' => $subsecoes

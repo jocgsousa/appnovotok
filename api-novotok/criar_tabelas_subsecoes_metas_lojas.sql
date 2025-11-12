@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS meta_loja_vendedoras_bijou (
     nome VARCHAR(100) NOT NULL,
     funcao VARCHAR(50) NOT NULL DEFAULT 'VENDEDORA BIJOU/MAKE/BOLSAS',
     bijou_make_bolsas INT NOT NULL DEFAULT 0,
+    percentual_comissao_bijou DECIMAL(5,2) NOT NULL DEFAULT 0,
+    valor_comissao_bijou DECIMAL(15,2) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (meta_loja_id) REFERENCES metas_lojas(id) ON DELETE CASCADE
@@ -69,7 +71,7 @@ CREATE TABLE IF NOT EXISTS meta_loja_campanhas (
     meta_loja_id VARCHAR(50) NOT NULL,
     nome VARCHAR(100) NOT NULL,
     descricao TEXT,
-    quantidade_vendida INT NOT NULL DEFAULT 0,
+    quantidade_vendida DECIMAL(15,2) NOT NULL DEFAULT 0,
     atingiu_meta BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

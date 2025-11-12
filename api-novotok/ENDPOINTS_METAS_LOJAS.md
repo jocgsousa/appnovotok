@@ -75,6 +75,24 @@ Authorization: Bearer {token}
 ### 2.4 Deletar Meta de Loja
 - **Endpoint:** `DELETE /deletar_meta_loja.php?id={meta_id}`
 
+### 2.5 Finalizar Meta de Loja
+- **Endpoint:** `PATCH /finalizar_meta_loja.php`
+- **Body:**
+```json
+{
+  "id": "meta_id_123"
+}
+```
+- **Descrição:** Marca a meta como inativa (finalizada). Operação idempotente.
+- **Resposta:**
+```json
+{
+  "status": 1,
+  "message": "Meta finalizada com sucesso.",
+  "data": { "id": "meta_id_123", "ativo": false }
+}
+```
+
 ## 3. Funcionários
 
 ### 3.1 Operadoras de Caixa

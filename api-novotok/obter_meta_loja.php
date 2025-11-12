@@ -179,7 +179,7 @@ try {
     }
 
     // Buscar vendedoras bijou
-    $sqlVendedorasBijou = "SELECT id, nome, funcao, bijou_make_bolsas 
+    $sqlVendedorasBijou = "SELECT id, nome, funcao, bijou_make_bolsas, percentual_comissao_bijou, valor_comissao_bijou 
                            FROM meta_loja_vendedoras_bijou 
                            WHERE meta_loja_id = ?";
     $stmtVendedorasBijou = $conn->prepare($sqlVendedorasBijou);
@@ -194,6 +194,8 @@ try {
             'nome' => $vendedora['nome'],
             'funcao' => $vendedora['funcao'],
             'bijouMakeBolsas' => (float)$vendedora['bijou_make_bolsas'],
+            'percentualComissaoBijou' => isset($vendedora['percentual_comissao_bijou']) ? (float)$vendedora['percentual_comissao_bijou'] : 0,
+            'valorComissaoBijou' => isset($vendedora['valor_comissao_bijou']) ? (float)$vendedora['valor_comissao_bijou'] : 0,
             'metasProdutos' => $metasProdutos
         ];
     }
@@ -227,8 +229,8 @@ try {
         ];
     }
 
-    // Buscar campanhas
-    $sqlCampanhas = "SELECT id, nome, descricao 
+    // Buscar campanhas (inclui quantidade_vendida e atingiu_meta)
+    $sqlCampanhas = "SELECT id, nome, descricao, quantidade_vendida, atingiu_meta 
                      FROM meta_loja_campanhas 
                      WHERE meta_loja_id = ?";
     $stmtCampanhas = $conn->prepare($sqlCampanhas);
@@ -240,7 +242,10 @@ try {
         $campanhas[] = [
             'id' => $campanha['id'],
             'nome' => $campanha['nome'],
-            'descricao' => $campanha['descricao']
+            'descricao' => $campanha['descricao'],
+            // Retornar em camelCase para o frontend, preservando decimais
+            'quantidadeVendida' => isset($campanha['quantidade_vendida']) ? (float)$campanha['quantidade_vendida'] : 0.0,
+            'atingiuMeta' => (bool)($campanha['atingiu_meta'] ?? 0)
         ];
     }
 
