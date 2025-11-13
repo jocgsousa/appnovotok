@@ -68,6 +68,7 @@ const Usuarios: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
+  const [syncingPermissoes, setSyncingPermissoes] = useState(false);
 
   // Carregar a lista de usuários
   useEffect(() => {
@@ -253,6 +254,47 @@ const Usuarios: React.FC = () => {
           [tipo]: checked
         }
       }));
+    }
+  };
+
+  // Selecionar todas as permissões (visualizar/criar/editar/excluir)
+  const handleSelecionarTodasPermissoes = () => {
+    const novasPermissoes: {[key: number]: {visualizar: boolean, criar: boolean, editar: boolean, excluir: boolean}} = {};
+    menus.forEach(menu => {
+      novasPermissoes[menu.id] = { visualizar: true, criar: true, editar: true, excluir: true };
+    });
+    setPermissoes(novasPermissoes);
+  };
+
+  // Limpar todas as permissões
+  const handleLimparTodasPermissoes = () => {
+    const novasPermissoes: {[key: number]: {visualizar: boolean, criar: boolean, editar: boolean, excluir: boolean}} = {};
+    menus.forEach(menu => {
+      novasPermissoes[menu.id] = { visualizar: false, criar: false, editar: false, excluir: false };
+    });
+    setPermissoes(novasPermissoes);
+  };
+
+  // Sincronizar menus do usuário (consolidar permissões no backend)
+  const handleConsolidarPermissoesUsuario = async () => {
+    if (!usuarioSelecionado) return;
+    setError(null);
+    setSuccess(null);
+    setSyncingPermissoes(true);
+    try {
+      const response = await api.post('/consolidar_permissoes_usuario.php', { usuario_id: usuarioSelecionado.id });
+      if (response.data && response.data.success) {
+        setSuccess(response.data.message || 'Permissões consolidadas com sucesso');
+        // Recarregar detalhes para trazer menus recém-criados
+        await carregarUsuarioDetalhado(usuarioSelecionado.id);
+      } else {
+        setError(response.data?.message || 'Erro ao consolidar permissões do usuário.');
+      }
+    } catch (err: any) {
+      console.error('Erro ao consolidar permissões:', err);
+      setError(err.response?.data?.message || 'Erro ao consolidar permissões. Tente novamente mais tarde.');
+    } finally {
+      setSyncingPermissoes(false);
     }
   };
 
@@ -650,6 +692,37 @@ const Usuarios: React.FC = () => {
                 </Tab>
                 
                 <Tab eventKey="permissoes" title="Permissões de Acesso">
+                  <Row className="mb-3">
+                    <Col>
+                      <div className="d-flex flex-wrap gap-2">
+                        <Button variant="outline-primary" size="sm" onClick={handleSelecionarTodasPermissoes}>
+                          <i className="bi bi-check2-all me-2"></i>Selecionar tudo
+                        </Button>
+                        <Button variant="outline-secondary" size="sm" onClick={handleLimparTodasPermissoes}>
+                          <i className="bi bi-x-circle me-2"></i>Limpar tudo
+                        </Button>
+                        {modalTipo === 'editar' && usuarioSelecionado && hasPermission('/usuarios', 'editar') && (
+                          <Button 
+                            variant="outline-info" 
+                            size="sm" 
+                            onClick={handleConsolidarPermissoesUsuario}
+                            disabled={syncingPermissoes}
+                          >
+                            {syncingPermissoes ? (
+                              <>
+                                <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                Sincronizando...
+                              </>
+                            ) : (
+                              <>
+                                <i className="bi bi-arrow-repeat me-2"></i>Sincronizar menus do usuário
+                              </>
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    </Col>
+                  </Row>
                   <div className="table-responsive">
                     <Table striped bordered hover>
                       <thead>
@@ -753,4 +826,4 @@ const Usuarios: React.FC = () => {
   );
 };
 
-export default Usuarios; 
+export default Usuarios;
