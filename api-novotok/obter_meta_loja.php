@@ -213,6 +213,7 @@ try {
     $gerente = null;
     if ($gerenteData) {
         $metasProdutos = buscarMetasProdutos($conn, $meta_id, $gerenteData['id'], 'gerente');
+        $p = (float)$gerenteData['percentual_meta_geral'];
         $gerente = [
             'id' => $gerenteData['id'],
             'nome' => $gerenteData['nome'],
@@ -224,7 +225,8 @@ try {
             'quantidadeMalka' => (int)$gerenteData['quantidade_malka'],
             'valorMalka' => (float)$gerenteData['valor_malka'],
             'bijouMakeBolsas' => (float)$gerenteData['bijou_make_bolsas'],
-            'percentualMetaGeral' => (float)$gerenteData['percentual_meta_geral'],
+            // Normalizar para formato fracionário (legado >1 vira /100, ex.: 9 => 0.09)
+            'percentualMetaGeral' => ($p > 1 ? $p / 100 : $p),
             'metasProdutos' => $metasProdutos
         ];
     }

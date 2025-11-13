@@ -246,6 +246,13 @@ const MetaLojas: React.FC = () => {
     });
   };
 
+  // Formatar percentual para exibir sempre em fracionário (ex.: 0.09 => 0,09%)
+  // Se vier em pontos percentuais legados (>1, ex.: 9), converte para fracionário (0.09)
+  const formatarPercentual = (valor: number): string => {
+    const fracionario = valor > 1 ? valor / 100 : valor;
+    return `${fracionario.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+  };
+
   // Função para formatar datas 'YYYY-MM-DD' em 'DD/MM/YYYY' sem usar Date()
   const formatarDataBR = (dateStr: string): string => {
     if (!dateStr) return '-';
@@ -415,9 +422,17 @@ const MetaLojas: React.FC = () => {
           operadorasCaixa: (meta as any).subsecoes?.operadorasCaixa ?? [],
           vendedoras: (meta as any).subsecoes?.vendedoras ?? [],
           vendedorasBijou: (meta as any).subsecoes?.vendedorasBijou ?? [],
-          gerente: ((meta as any).subsecoes?.gerente && (meta as any).subsecoes?.gerente.length > 0)
-            ? (meta as any).subsecoes.gerente[0]
-            : null,
+          gerente: (() => {
+            const gRaw = (meta as any).subsecoes?.gerente && (meta as any).subsecoes?.gerente.length > 0
+              ? (meta as any).subsecoes.gerente[0]
+              : null;
+            if (!gRaw) return null;
+            return {
+              ...gRaw,
+              // Garantir camelCase para o percentual
+              percentualMetaGeral: (gRaw?.percentualMetaGeral ?? gRaw?.percentual_meta_geral ?? 0)
+            };
+          })(),
           campanhas: (meta as any).subsecoes?.campanhas ?? [],
           funcionarios: (meta as any).subsecoes?.funcionarios ?? [],
           dataCriacao: meta.dataCriacao,
@@ -466,8 +481,9 @@ const MetaLojas: React.FC = () => {
   useEffect(() => {
     if (gerente) {
       const campanhasAtingidas = campanhas.filter(campanha => campanha.atingiuMeta).length;
-      const percentualBase = 0.08; // 0,08% inicial
-      const percentualAdicional = campanhasAtingidas * 0.01; // 0,01% para cada campanha atingida
+      // Percentual armazenado em formato fracionário de percentagem (ex.: 0.08 => 0,08%)
+      const percentualBase = 0.08; // Base de 0,08%
+      const percentualAdicional = campanhasAtingidas * 0.01; // +0,01% por campanha atingida
       const novoPercentual = percentualBase + percentualAdicional;
       
       if (gerente.percentualMetaGeral !== novoPercentual) {
@@ -2025,7 +2041,7 @@ const MetaLojas: React.FC = () => {
                                   <div className="mt-1">
                                     <strong>Valor da comissão: R$ {(
                                       (parseFloat(novaMetaValorTotal) || 0) *
-                                      (gerente.percentualMetaGeral / 100)
+                                      (((gerente.percentualMetaGeral > 1 ? gerente.percentualMetaGeral / 100 : gerente.percentualMetaGeral)) / 100)
                                     ).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                                   </div>
                                 )}
@@ -2196,8 +2212,9 @@ const MetaLojas: React.FC = () => {
 
                 {(() => {
                   // Alinhar Operadoras ao layout resumido de Vendedoras
-                  const operadoras = (metaAdminDetalhes?.operadoras_caixa ?? []).filter((op: any) => (op?.metasProdutos ?? []).length > 0);
-                  if (operadoras.length === 0) return null;
+                  // Exibir todas as operadoras cadastradas, mesmo sem metas de produtos
+                  const operadoras = (metaAdminDetalhes?.operadoras_caixa ?? []);
+                  if (!operadoras || operadoras.length === 0) return null;
                   return (
                     <Row className="mb-3">
                       <Col>
@@ -2356,12 +2373,13 @@ const MetaLojas: React.FC = () => {
                               <tbody>
                                 <tr>
                                   <td>{g?.nome ?? '-'}</td>
-                                  <td>{g?.percentualMetaGeral ?? 0}%</td>
+                                  <td>{formatarPercentual(Number(g?.percentualMetaGeral ?? 0))}</td>
                                   <td>
                                     {(() => {
                                       const valorTotal = Number(metaAdminDetalhes?.valor_venda_loja_total ?? metaSelecionada.valorVendaLojaTotal ?? 0);
-                                      const percentual = Number(g?.percentualMetaGeral ?? 0);
-                                      const comissao = valorTotal * (percentual / 100);
+                                      const pRaw = Number(g?.percentualMetaGeral ?? 0);
+                                      const pFrac = pRaw > 1 ? pRaw / 100 : pRaw;
+                                      const comissao = valorTotal * (pFrac / 100);
                                       return `R$ ${Number(comissao).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                                     })()}
                                   </td>

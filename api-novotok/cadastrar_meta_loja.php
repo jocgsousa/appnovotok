@@ -303,27 +303,39 @@ try {
     function salvarGerente($conn, $meta_id, $gerente) {
         if (!$gerente) return;
         
-        $sql = "INSERT INTO meta_loja_gerente (id, meta_loja_id, nome, funcao, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, quantidade_malka, valor_malka, bijou_make_bolsas) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO meta_loja_gerente (id, meta_loja_id, nome, funcao, percentual_meta_geral, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, quantidade_malka, valor_malka, bijou_make_bolsas) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
         
+        // Aceitar tanto camelCase quanto snake_case
+        $valorVendidoTotal = is_array($gerente) ? ($gerente['valorVendidoTotal'] ?? $gerente['valor_vendido_total'] ?? 0) : ($gerente->valorVendidoTotal ?? $gerente->valor_vendido_total ?? 0);
+        $esmaltes = is_array($gerente) ? ($gerente['esmaltes'] ?? 0) : ($gerente->esmaltes ?? 0);
+        $profissionalParceiras = is_array($gerente) ? ($gerente['profissionalParceiras'] ?? $gerente['profissional_parceiras'] ?? 0) : ($gerente->profissionalParceiras ?? $gerente->profissional_parceiras ?? 0);
+        $valorVendidoMake = is_array($gerente) ? ($gerente['valorVendidoMake'] ?? $gerente['valor_vendido_make'] ?? 0) : ($gerente->valorVendidoMake ?? $gerente->valor_vendido_make ?? 0);
+        $quantidadeMalka = is_array($gerente) ? ($gerente['quantidadeMalka'] ?? $gerente['quantidade_malka'] ?? 0) : ($gerente->quantidadeMalka ?? $gerente->quantidade_malka ?? 0);
+        $valorMalka = is_array($gerente) ? ($gerente['valorMalka'] ?? $gerente['valor_malka'] ?? 0) : ($gerente->valorMalka ?? $gerente->valor_malka ?? 0);
+        $bijouMakeBolsas = is_array($gerente) ? ($gerente['bijouMakeBolsas'] ?? $gerente['bijou_make_bolsas'] ?? 0) : ($gerente->bijouMakeBolsas ?? $gerente->bijou_make_bolsas ?? 0);
+        $percentualMetaGeral = is_array($gerente) ? ($gerente['percentualMetaGeral'] ?? $gerente['percentual_meta_geral'] ?? 0) : ($gerente->percentualMetaGeral ?? $gerente->percentual_meta_geral ?? 0);
+
         $gerente_id = uniqid('gerente_', true);
         $stmt->bindValue(1, $gerente_id);
         $stmt->bindValue(2, $meta_id);
-        $stmt->bindValue(3, $gerente->nome ?? '');
-        $stmt->bindValue(4, $gerente->funcao ?? 'GERENTE');
-        $stmt->bindValue(5, $gerente->valor_vendido_total ?? 0);
-        $stmt->bindValue(6, $gerente->esmaltes ?? 0);
-        $stmt->bindValue(7, $gerente->profissional_parceiras ?? 0);
-        $stmt->bindValue(8, $gerente->valor_vendido_make ?? 0);
-        $stmt->bindValue(9, $gerente->quantidade_malka ?? 0);
-        $stmt->bindValue(10, $gerente->valor_malka ?? 0);
-        $stmt->bindValue(11, $gerente->bijou_make_bolsas ?? 0);
+        $stmt->bindValue(3, (is_array($gerente) ? ($gerente['nome'] ?? '') : ($gerente->nome ?? '')));
+        $stmt->bindValue(4, (is_array($gerente) ? ($gerente['funcao'] ?? 'GERENTE') : ($gerente->funcao ?? 'GERENTE')));
+        $stmt->bindValue(5, is_numeric($percentualMetaGeral) ? (float)$percentualMetaGeral : 0);
+        $stmt->bindValue(6, $valorVendidoTotal);
+        $stmt->bindValue(7, $esmaltes);
+        $stmt->bindValue(8, $profissionalParceiras);
+        $stmt->bindValue(9, $valorVendidoMake);
+        $stmt->bindValue(10, $quantidadeMalka);
+        $stmt->bindValue(11, $valorMalka);
+        $stmt->bindValue(12, $bijouMakeBolsas);
         $stmt->execute();
         
         // Salvar metas de produtos do gerente
-        if (isset($gerente->metasProdutos) && is_array($gerente->metasProdutos)) {
-            salvarMetasProdutos($conn, $meta_id, $gerente_id, 'gerente', $gerente->metasProdutos);
+        if ((is_array($gerente) && isset($gerente['metasProdutos']) && is_array($gerente['metasProdutos'])) || (isset($gerente->metasProdutos) && is_array($gerente->metasProdutos))) {
+            $metasProdutos = is_array($gerente) ? $gerente['metasProdutos'] : $gerente->metasProdutos;
+            salvarMetasProdutos($conn, $meta_id, $gerente_id, 'gerente', $metasProdutos);
         }
     }
 

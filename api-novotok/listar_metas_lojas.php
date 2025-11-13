@@ -198,6 +198,12 @@ try {
             $stmtProdutos->bindValue(2, $gerente['id']);
             $stmtProdutos->execute();
             $gerente['metasProdutos'] = $stmtProdutos->fetchAll(PDO::FETCH_ASSOC);
+
+            // Normalizar percentual para fracionário: legado >1 vira /100 (ex.: 9 => 0.09)
+            if (isset($gerente['percentual_meta_geral'])) {
+                $p = (float)$gerente['percentual_meta_geral'];
+                $gerente['percentualMetaGeral'] = ($p > 1 ? $p / 100 : $p);
+            }
         }
         $subsecoes['gerente'] = $gerentes;
 
