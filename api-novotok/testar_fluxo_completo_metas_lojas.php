@@ -162,7 +162,7 @@ try {
     // Inserir vendedoras (usando estrutura real da tabela)
     foreach ($dadosCadastro['vendedoras'] as $vendedora) {
         $vendedoraId = uniqid('vd_', true);
-        $sql = "INSERT INTO meta_loja_vendedoras (id, meta_loja_id, nome, funcao, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, quantidade_malka, valor_malka) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO meta_loja_vendedoras (id, meta_loja_id, nome, funcao, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, bijou_make_bolsas) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
         $stmt->bindValue(1, $vendedoraId);
         $stmt->bindValue(2, $metaTestId);
@@ -172,8 +172,7 @@ try {
         $stmt->bindValue(6, 15); // esmaltes
         $stmt->bindValue(7, 8); // profissional_parceiras
         $stmt->bindValue(8, 5000.00); // valor_vendido_make
-        $stmt->bindValue(9, 5); // quantidade_malka
-        $stmt->bindValue(10, 1000.00); // valor_malka
+        $stmt->bindValue(9, 15); // bijou_make_bolsas
         $stmt->execute();
         
         // Inserir metas de produtos
@@ -208,7 +207,7 @@ try {
     
     foreach ($dadosCadastro['gerente'] as $gerente) {
         $gerenteId = uniqid('gr_', true);
-        $sql = "INSERT INTO meta_loja_gerente (id, meta_loja_id, nome, funcao, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, quantidade_malka, valor_malka, bijou_make_bolsas) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO meta_loja_gerente (id, meta_loja_id, nome, funcao, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, bijou_make_bolsas) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
         $stmt->bindValue(1, $gerenteId);
         $stmt->bindValue(2, $metaTestId);
@@ -218,9 +217,7 @@ try {
         $stmt->bindValue(6, 20); // esmaltes
         $stmt->bindValue(7, 10); // profissional_parceiras
         $stmt->bindValue(8, 8000.00); // valor_vendido_make
-        $stmt->bindValue(9, 8); // quantidade_malka
-        $stmt->bindValue(10, 2000.00); // valor_malka
-        $stmt->bindValue(11, 20); // bijou_make_bolsas
+        $stmt->bindValue(9, 20); // bijou_make_bolsas
         $stmt->execute();
     }
     

@@ -154,7 +154,10 @@ try {
 
     // Buscar vendedoras
     $sqlVendedoras = "SELECT id, nome, funcao, valor_vendido_total, esmaltes, profissional_parceiras, 
-                             valor_vendido_make, quantidade_malka, valor_malka 
+                             valor_vendido_make, bijou_make_bolsas,
+                             percentual_comissao_venda_total, valor_comissao_venda_total,
+                             percentual_comissao_profissional_parceiras, valor_comissao_profissional_parceiras,
+                             valor_comissao_total 
                       FROM meta_loja_vendedoras 
                       WHERE meta_loja_id = ?";
     $stmtVendedoras = $conn->prepare($sqlVendedoras);
@@ -172,8 +175,12 @@ try {
             'esmaltes' => (int)$vendedora['esmaltes'],
             'profissionalParceiras' => (int)$vendedora['profissional_parceiras'],
             'valorVendidoMake' => (float)$vendedora['valor_vendido_make'],
-            'quantidadeMalka' => (int)$vendedora['quantidade_malka'],
-            'valorMalka' => (float)$vendedora['valor_malka'],
+            'bijouMakeBolsas' => isset($vendedora['bijou_make_bolsas']) ? (float)$vendedora['bijou_make_bolsas'] : 0,
+            'percentualComissaoVendaTotal' => isset($vendedora['percentual_comissao_venda_total']) ? (float)$vendedora['percentual_comissao_venda_total'] : 0,
+            'valorComissaoVendaTotal' => isset($vendedora['valor_comissao_venda_total']) ? (float)$vendedora['valor_comissao_venda_total'] : 0,
+            'percentualComissaoProfissionalParceiras' => isset($vendedora['percentual_comissao_profissional_parceiras']) ? (float)$vendedora['percentual_comissao_profissional_parceiras'] : 0,
+            'valorComissaoProfissionalParceiras' => isset($vendedora['valor_comissao_profissional_parceiras']) ? (float)$vendedora['valor_comissao_profissional_parceiras'] : 0,
+            'valorComissaoTotal' => isset($vendedora['valor_comissao_total']) ? (float)$vendedora['valor_comissao_total'] : 0,
             'metasProdutos' => $metasProdutos
         ];
     }
@@ -202,7 +209,7 @@ try {
 
     // Buscar gerente
     $sqlGerente = "SELECT id, nome, funcao, percentual_meta_geral, valor_vendido_total, esmaltes, profissional_parceiras, 
-                          valor_vendido_make, quantidade_malka, valor_malka, bijou_make_bolsas 
+                          valor_vendido_make, bijou_make_bolsas 
                    FROM meta_loja_gerente 
                    WHERE meta_loja_id = ?";
     $stmtGerente = $conn->prepare($sqlGerente);
@@ -222,8 +229,6 @@ try {
             'esmaltes' => (int)$gerenteData['esmaltes'],
             'profissionalParceiras' => (int)$gerenteData['profissional_parceiras'],
             'valorVendidoMake' => (float)$gerenteData['valor_vendido_make'],
-            'quantidadeMalka' => (int)$gerenteData['quantidade_malka'],
-            'valorMalka' => (float)$gerenteData['valor_malka'],
             'bijouMakeBolsas' => (float)$gerenteData['bijou_make_bolsas'],
             // Normalizar para formato fracionário (legado >1 vira /100, ex.: 9 => 0.09)
             'percentualMetaGeral' => ($p > 1 ? $p / 100 : $p),

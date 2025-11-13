@@ -48,15 +48,14 @@ try {
             'esmaltes' => 'INT',
             'profissional_parceiras' => 'INT',
             'valor_vendido_make' => 'DECIMAL(15,2)',
-            'quantidade_malka' => 'INT',
-            'valor_malka' => 'DECIMAL(15,2)'
+            'bijou_make_bolsas' => 'DECIMAL(15,2)'
         ],
         'meta_loja_vendedoras_bijou' => [
             'id' => 'VARCHAR(50)',
             'meta_loja_id' => 'VARCHAR(50)',
             'nome' => 'VARCHAR(100)',
             'funcao' => 'VARCHAR(50)',
-            'bijou_make_bolsas' => 'INT'
+            'bijou_make_bolsas' => 'DECIMAL(15,2)'
         ],
         'meta_loja_gerente' => [
             'id' => 'VARCHAR(50)',

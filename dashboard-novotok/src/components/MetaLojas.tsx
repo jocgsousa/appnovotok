@@ -43,18 +43,23 @@ interface OperadoraCaixa {
   metasProdutos: MetaProduto[];
 }
 
-interface Vendedora {
-  id: string;
-  nome: string;
-  funcao: string;
-  valorVendidoTotal: number;
-  esmaltes: number;
-  profissionalParceiras: number;
-  valorVendidoMake: number;
-  quantidadeMalka: number;
-  valorMalka: number;
-  metasProdutos: MetaProduto[];
-}
+  interface Vendedora {
+    id: string;
+    nome: string;
+    funcao: string;
+    valorVendidoTotal: number;
+    esmaltes: number;
+    profissionalParceiras: number;
+    valorVendidoMake: number;
+    bijouMakeBolsas: number;
+    // Novos campos de comissão para vendedoras
+    percentualComissaoVendaTotal?: number;
+    valorComissaoVendaTotal?: number;
+    percentualComissaoProfissionalParceiras?: number;
+    valorComissaoProfissionalParceiras?: number;
+    valorComissaoTotal?: number;
+    metasProdutos: MetaProduto[];
+  }
 
 interface VendedoraBijou {
   id: string;
@@ -237,13 +242,22 @@ const MetaLojas: React.FC = () => {
 
   // Função para formatar número para exibição
   const formatarNumeroParaExibicao = (numero: number): string => {
-    if (!numero) return '';
-    return numero.toLocaleString('pt-BR', {
+    if (numero === null || numero === undefined || Number.isNaN(Number(numero))) return '';
+    return Number(numero).toLocaleString('pt-BR', {
       style: 'currency',
       currency: 'BRL',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     });
+  };
+
+  // Converter valor possivelmente mascarado (string) para número seguro
+  const toNumeroSeguro = (valor: any): number => {
+    if (typeof valor === 'string') {
+      return converterMascaraParaNumero(valor);
+    }
+    const n = Number(valor || 0);
+    return Number.isFinite(n) ? n : 0;
   };
 
   // Formatar percentual para exibir sempre em fracionário (ex.: 0.09 => 0,09%)
@@ -368,7 +382,7 @@ const MetaLojas: React.FC = () => {
   useEffect(() => {
     let changed = false;
     const recalculado = vendedorasBijou.map(vb => {
-      const bijou = (vb.bijouMakeBolsas ?? (vb as any).bijou_make_bolsas ?? 0) as number;
+      const bijou = toNumeroSeguro((vb.bijouMakeBolsas ?? (vb as any).bijou_make_bolsas ?? 0));
       const perc = (vb.percentualComissaoBijou ?? (vb as any).percentual_comissao_bijou ?? 0) as number;
       const atual = (vb.valorComissaoBijou ?? (vb as any).valor_comissao_bijou) as number | undefined;
       const somaMetas = (vb.metasProdutos ?? []).reduce((acc: number, m: any) => acc + (m?.valorComissao ?? 0), 0);
@@ -541,8 +555,12 @@ const MetaLojas: React.FC = () => {
       esmaltes: 0,
       profissionalParceiras: 0,
       valorVendidoMake: 0,
-      quantidadeMalka: 0,
-      valorMalka: 0,
+      bijouMakeBolsas: 0,
+      percentualComissaoVendaTotal: 0,
+      valorComissaoVendaTotal: 0,
+      percentualComissaoProfissionalParceiras: 0,
+      valorComissaoProfissionalParceiras: 0,
+      valorComissaoTotal: 0,
       metasProdutos: []
     };
     setVendedoras([...vendedoras, novaVendedora]);
@@ -564,8 +582,12 @@ const MetaLojas: React.FC = () => {
         esmaltes: 0,
         profissionalParceiras: 0,
         valorVendidoMake: 0,
-        quantidadeMalka: 0,
-        valorMalka: 0,
+        bijouMakeBolsas: 0,
+        percentualComissaoVendaTotal: 0,
+        valorComissaoVendaTotal: 0,
+        percentualComissaoProfissionalParceiras: 0,
+        valorComissaoProfissionalParceiras: 0,
+        valorComissaoTotal: 0,
         metasProdutos: []
       }));
 
@@ -583,9 +605,29 @@ const MetaLojas: React.FC = () => {
   };
 
   const atualizarVendedora = (id: string, campo: string, valor: any) => {
-    setVendedoras(vendedoras.map(v => 
-      v.id === id ? { ...v, [campo]: valor } : v
-    ));
+    setVendedoras(vendedoras.map(v => {
+      if (v.id !== id) return v;
+      // Se o campo atualizado for monetário, armazenar em número
+      const camposMonetarios = new Set([
+        'valorVendidoTotal', 'esmaltes', 'valorVendidoMake', 'profissionalParceiras', 'bijouMakeBolsas'
+      ]);
+      const valorProcessado = camposMonetarios.has(campo) ? toNumeroSeguro(valor) : valor;
+      const atualizado = { ...v, [campo]: valorProcessado } as Vendedora & any;
+      // Recalcular comissões com base nas novas regras
+      const total = toNumeroSeguro(atualizado.valorVendidoTotal);
+      const esmaltes = toNumeroSeguro(atualizado.esmaltes);
+      const make = toNumeroSeguro(atualizado.valorVendidoMake);
+      const profParc = toNumeroSeguro(atualizado.profissionalParceiras);
+      const percTotal = Number(atualizado.percentualComissaoVendaTotal || 0);
+      const percProf = Number(atualizado.percentualComissaoProfissionalParceiras || 0);
+      const baseTotal = total - esmaltes - make - profParc;
+      const comissaoTotal = (baseTotal * percTotal) / 100;
+      const comissaoProf = (profParc * percProf) / 100;
+      atualizado.valorComissaoVendaTotal = comissaoTotal;
+      atualizado.valorComissaoProfissionalParceiras = comissaoProf;
+      atualizado.valorComissaoTotal = comissaoTotal + comissaoProf;
+      return atualizado;
+    }));
   };
 
   // Funções para Vendedoras Bijou
@@ -615,8 +657,10 @@ const MetaLojas: React.FC = () => {
   const atualizarVendedoraBijou = (id: string, campo: string, valor: any) => {
     setVendedorasBijou(vendedorasBijou.map(vb => {
       if (vb.id !== id) return vb;
-      const atualizado = { ...vb, [campo]: valor } as VendedoraBijou & any;
-      const bijouValor = (atualizado.bijouMakeBolsas ?? atualizado.bijou_make_bolsas ?? 0) as number;
+      const camposMonetariosBijou = new Set(['bijouMakeBolsas']);
+      const valorProcessado = camposMonetariosBijou.has(campo) ? toNumeroSeguro(valor) : valor;
+      const atualizado = { ...vb, [campo]: valorProcessado } as VendedoraBijou & any;
+      const bijouValor = toNumeroSeguro((atualizado.bijouMakeBolsas ?? atualizado.bijou_make_bolsas ?? 0));
       const perc = (atualizado.percentualComissaoBijou ?? atualizado.percentual_comissao_bijou ?? 0) as number;
       // Recalcular comissão total (bijou + metasProdutos) quando bijouMakeBolsas ou percentual mudar
       if (campo === 'bijouMakeBolsas' || campo === 'percentualComissaoBijou') {
@@ -663,7 +707,22 @@ const MetaLojas: React.FC = () => {
         if (v.id === funcionarioId) {
           const metasAtualizadas = [...v.metasProdutos, novaMeta];
           const soma = somarComissoesMetas(metasAtualizadas);
-          return { ...v, metasProdutos: metasAtualizadas, profissionalParceiras: soma };
+          const total = toNumeroSeguro(v.valorVendidoTotal);
+          const esmaltes = toNumeroSeguro(v.esmaltes);
+          const make = toNumeroSeguro(v.valorVendidoMake);
+          const percTotal = Number(v.percentualComissaoVendaTotal || 0);
+          const percProf = Number(v.percentualComissaoProfissionalParceiras || 0);
+          const baseTotal = total - esmaltes - make - soma;
+          const comissaoTotal = (baseTotal * percTotal) / 100;
+          const comissaoProf = (soma * percProf) / 100;
+          return { 
+            ...v, 
+            metasProdutos: metasAtualizadas, 
+            profissionalParceiras: soma,
+            valorComissaoVendaTotal: comissaoTotal,
+            valorComissaoProfissionalParceiras: comissaoProf,
+            valorComissaoTotal: comissaoTotal + comissaoProf
+          };
         }
         return v;
       }));
@@ -672,7 +731,7 @@ const MetaLojas: React.FC = () => {
         if (vb.id === funcionarioId) {
           const metasAtualizadas = [...vb.metasProdutos, novaMeta];
           const soma = somarComissoesMetas(metasAtualizadas);
-          const bijouValor = (vb.bijouMakeBolsas ?? (vb as any).bijou_make_bolsas ?? 0) as number;
+          const bijouValor = toNumeroSeguro((vb.bijouMakeBolsas ?? (vb as any).bijou_make_bolsas ?? 0));
           const perc = (vb.percentualComissaoBijou ?? (vb as any).percentual_comissao_bijou ?? 0) as number;
           const comissaoBijou = (bijouValor * perc) / 100;
           return { 
@@ -696,7 +755,22 @@ const MetaLojas: React.FC = () => {
         if (v.id === funcionarioId) {
           const metasAtualizadas = v.metasProdutos.filter(m => m.id !== metaId);
           const soma = somarComissoesMetas(metasAtualizadas);
-          return { ...v, metasProdutos: metasAtualizadas, profissionalParceiras: soma };
+          const total = toNumeroSeguro(v.valorVendidoTotal);
+          const esmaltes = toNumeroSeguro(v.esmaltes);
+          const make = toNumeroSeguro(v.valorVendidoMake);
+          const percTotal = Number(v.percentualComissaoVendaTotal || 0);
+          const percProf = Number(v.percentualComissaoProfissionalParceiras || 0);
+          const baseTotal = total - esmaltes - make - soma;
+          const comissaoTotal = (baseTotal * percTotal) / 100;
+          const comissaoProf = (soma * percProf) / 100;
+          return { 
+            ...v, 
+            metasProdutos: metasAtualizadas, 
+            profissionalParceiras: soma,
+            valorComissaoVendaTotal: comissaoTotal,
+            valorComissaoProfissionalParceiras: comissaoProf,
+            valorComissaoTotal: comissaoTotal + comissaoProf
+          };
         }
         return v;
       }));
@@ -705,7 +779,7 @@ const MetaLojas: React.FC = () => {
         if (vb.id === funcionarioId) {
           const metasAtualizadas = vb.metasProdutos.filter(m => m.id !== metaId);
           const soma = somarComissoesMetas(metasAtualizadas);
-          const bijouValor = (vb.bijouMakeBolsas ?? (vb as any).bijou_make_bolsas ?? 0) as number;
+          const bijouValor = toNumeroSeguro((vb.bijouMakeBolsas ?? (vb as any).bijou_make_bolsas ?? 0));
           const perc = (vb.percentualComissaoBijou ?? (vb as any).percentual_comissao_bijou ?? 0) as number;
           const comissaoBijou = (bijouValor * perc) / 100;
           return { ...vb, metasProdutos: metasAtualizadas, valorComissaoBijou: comissaoBijou + soma };
@@ -735,7 +809,22 @@ const MetaLojas: React.FC = () => {
         if (v.id === funcionarioId) {
           const metasAtualizadas = v.metasProdutos.map(atualizarMeta);
           const soma = somarComissoesMetas(metasAtualizadas);
-          return { ...v, metasProdutos: metasAtualizadas, profissionalParceiras: soma };
+          const total = toNumeroSeguro(v.valorVendidoTotal);
+          const esmaltes = toNumeroSeguro(v.esmaltes);
+          const make = toNumeroSeguro(v.valorVendidoMake);
+          const percTotal = Number(v.percentualComissaoVendaTotal || 0);
+          const percProf = Number(v.percentualComissaoProfissionalParceiras || 0);
+          const baseTotal = total - esmaltes - make - soma;
+          const comissaoTotal = (baseTotal * percTotal) / 100;
+          const comissaoProf = (soma * percProf) / 100;
+          return { 
+            ...v, 
+            metasProdutos: metasAtualizadas, 
+            profissionalParceiras: soma,
+            valorComissaoVendaTotal: comissaoTotal,
+            valorComissaoProfissionalParceiras: comissaoProf,
+            valorComissaoTotal: comissaoTotal + comissaoProf
+          };
         }
         return v;
       }));
@@ -1097,7 +1186,22 @@ const MetaLojas: React.FC = () => {
         if (v.id === funcionarioId) {
           const metasAtualizadas = [...v.metasProdutos, ...metasCompletas];
           const soma = somarComissoesMetas(metasAtualizadas);
-          return { ...v, metasProdutos: metasAtualizadas, profissionalParceiras: soma };
+          const total = toNumeroSeguro(v.valorVendidoTotal);
+          const esmaltes = toNumeroSeguro(v.esmaltes);
+          const make = toNumeroSeguro(v.valorVendidoMake);
+          const percTotal = Number(v.percentualComissaoVendaTotal || 0);
+          const percProf = Number(v.percentualComissaoProfissionalParceiras || 0);
+          const baseTotal = total - esmaltes - make - soma;
+          const comissaoTotal = (baseTotal * percTotal) / 100;
+          const comissaoProf = (soma * percProf) / 100;
+          return { 
+            ...v, 
+            metasProdutos: metasAtualizadas, 
+            profissionalParceiras: soma,
+            valorComissaoVendaTotal: comissaoTotal,
+            valorComissaoProfissionalParceiras: comissaoProf,
+            valorComissaoTotal: comissaoTotal + comissaoProf
+          };
         }
         return v;
       }));
@@ -1430,7 +1534,7 @@ const MetaLojas: React.FC = () => {
                     <td>
                       <ButtonGroup size="sm" className="gap-1">
                         <OverlayTrigger placement="top" overlay={<Tooltip>Visualizar</Tooltip>}>
-                          <Button variant="primary" onClick={() => abrirModalVisualizar(meta)}>
+                          <Button variant="primary" style={{ backgroundColor: '#0d6efd', borderColor: '#0d6efd' }} onClick={() => abrirModalVisualizar(meta)}>
                             <i className="bi bi-eye"></i>
                             <span className="ms-1">Visualizar</span>
                           </Button>
@@ -1642,6 +1746,12 @@ const MetaLojas: React.FC = () => {
                             </Col>
                           </Row>
                           <Row>
+                            {/* Removido: campo Bijou pertence às Vendedoras/Vendedoras Bijou, não Operadoras */}
+                          </Row>
+                          <Row>
+                            {/* Campo indevido removido: Bijou pertence às Vendedoras/Vendedoras Bijou */}
+                          </Row>
+                          <Row>
                             <Col md={6}>
                               <Form.Group className="mb-3">
                                 <Form.Label>Cadastros Positivados</Form.Label>
@@ -1665,13 +1775,16 @@ const MetaLojas: React.FC = () => {
                               </Form.Group>
                             </Col>
                           </Row>
+                          <Row>
+                            {/* Removido: campo Bijou pertence às Vendedoras/Vendedoras Bijou, não Operadoras */}
+                          </Row>
                           
                           {/* Componente de Metas de Produtos */}
                           <MetasProdutosComponent
                             metasProdutos={operadora.metasProdutos}
                             funcionarioId={operadora.id}
                             tipoFuncionario="operadora"
-                            titulo="Metas de Produtos/Marcas"
+                            titulo="Metas de Produtos/Marcas/Cadastros"
                             onAdicionarMeta={adicionarMetaProduto}
                             onRemoverMeta={removerMetaProduto}
                             onAtualizarMeta={atualizarMetaProduto}
@@ -1779,8 +1892,13 @@ const MetaLojas: React.FC = () => {
                                 <Form.Control
                                   type="text"
                                   value={formatarNumeroParaExibicao(vendedora.profissionalParceiras)}
-                                  readOnly
-                                  className="bg-light"
+                                  readOnly={(vendedora.metasProdutos ?? []).length > 0}
+                                  className={(vendedora.metasProdutos ?? []).length > 0 ? 'bg-light' : undefined}
+                                  onChange={(e) => {
+                                    if ((vendedora.metasProdutos ?? []).length === 0) {
+                                      handleInputMonetario(e.target.value, (valor) => atualizarVendedora(vendedora.id, 'profissionalParceiras', valor));
+                                    }
+                                  }}
                                   placeholder="R$ 0,00"
                                 />
                               </Form.Group>
@@ -1789,7 +1907,7 @@ const MetaLojas: React.FC = () => {
                           <Row>
                             <Col md={4}>
                               <Form.Group className="mb-3">
-                                <Form.Label>Valor Vendido Make</Form.Label>
+                                <Form.Label>Valor Vendido Bijou/Make/Bolsas</Form.Label>
                                 <Form.Control
                                   type="text"
                                   value={formatarNumeroParaExibicao(vendedora.valorVendidoMake)}
@@ -1798,25 +1916,64 @@ const MetaLojas: React.FC = () => {
                                 />
                               </Form.Group>
                             </Col>
+                          </Row>
+                          <Row>
                             <Col md={4}>
                               <Form.Group className="mb-3">
-                                <Form.Label>Quantidade Malka</Form.Label>
-                                <Form.Control 
-                                  type="number" 
-                                  value={vendedora.quantidadeMalka}
-                                  onChange={(e) => atualizarVendedora(vendedora.id, 'quantidadeMalka', parseFloat(e.target.value) || 0)}
+                                <Form.Label>% Comissão sobre Valor Vendido Total</Form.Label>
+                                <Form.Control
+                                  type="number"
+                                  step="0.01"
+                                  value={vendedora.percentualComissaoVendaTotal ?? 0}
+                                  onChange={(e) => atualizarVendedora(vendedora.id, 'percentualComissaoVendaTotal', parseFloat(e.target.value) || 0)}
                                   placeholder="0"
                                 />
                               </Form.Group>
                             </Col>
                             <Col md={4}>
                               <Form.Group className="mb-3">
-                                <Form.Label>Valor Malka</Form.Label>
+                                <Form.Label>Comissão sobre Valor Vendido Total (R$)</Form.Label>
                                 <Form.Control
                                   type="text"
-                                  value={formatarNumeroParaExibicao(vendedora.valorMalka)}
-                                  onChange={(e) => handleInputMonetario(e.target.value, (valor) => atualizarVendedora(vendedora.id, 'valorMalka', valor))}
-                                  placeholder="R$ 0,00"
+                                  value={formatarNumeroParaExibicao(vendedora.valorComissaoVendaTotal ?? 0)}
+                                  readOnly
+                                  disabled
+                                />
+                              </Form.Group>
+                            </Col>
+                            <Col md={4}>
+                              <Form.Group className="mb-3">
+                                <Form.Label>Comissão Total (R$)</Form.Label>
+                                <Form.Control
+                                  type="text"
+                                  value={formatarNumeroParaExibicao(vendedora.valorComissaoTotal ?? 0)}
+                                  readOnly
+                                  disabled
+                                />
+                              </Form.Group>
+                            </Col>
+                          </Row>
+                          <Row>
+                            <Col md={4}>
+                              <Form.Group className="mb-3">
+                                <Form.Label>% Comissão sobre Profissional/Parceiras</Form.Label>
+                                <Form.Control
+                                  type="number"
+                                  step="0.01"
+                                  value={vendedora.percentualComissaoProfissionalParceiras ?? 0}
+                                  onChange={(e) => atualizarVendedora(vendedora.id, 'percentualComissaoProfissionalParceiras', parseFloat(e.target.value) || 0)}
+                                  placeholder="0"
+                                />
+                              </Form.Group>
+                            </Col>
+                            <Col md={4}>
+                              <Form.Group className="mb-3">
+                                <Form.Label>Comissão sobre Profissional/Parceiras (R$)</Form.Label>
+                                <Form.Control
+                                  type="text"
+                                  value={formatarNumeroParaExibicao(vendedora.valorComissaoProfissionalParceiras ?? 0)}
+                                  readOnly
+                                  disabled
                                 />
                               </Form.Group>
                             </Col>
@@ -1827,7 +1984,7 @@ const MetaLojas: React.FC = () => {
                             metasProdutos={vendedora.metasProdutos}
                             funcionarioId={vendedora.id}
                             tipoFuncionario="vendedora"
-                            titulo="Metas de Produtos/Marcas"
+                            titulo="Metas de Produtos/Marcas/Cadastros"
                             onAdicionarMeta={adicionarMetaProduto}
                             onRemoverMeta={removerMetaProduto}
                             onAtualizarMeta={atualizarMetaProduto}
@@ -1950,7 +2107,7 @@ const MetaLojas: React.FC = () => {
                             metasProdutos={vendedora.metasProdutos}
                             funcionarioId={vendedora.id}
                             tipoFuncionario="vendedoraBijou"
-                            titulo="Metas de Produtos/Marcas"
+                            titulo="Metas de Produtos/Marcas/Cadastros"
                             onAdicionarMeta={adicionarMetaProduto}
                             onRemoverMeta={removerMetaProduto}
                             onAtualizarMeta={atualizarMetaProduto}
@@ -2256,8 +2413,10 @@ const MetaLojas: React.FC = () => {
                 })()}
 
                 {(() => {
-                  const vendedoras = (metaAdminDetalhes?.vendedoras ?? []).filter((v: any) => (v?.metasProdutos ?? []).length > 0);
-                  if (vendedoras.length === 0) return null;
+                  // Listar vendedoras mesmo sem grupo/metas de produtos atribuídos
+                  // Fallback para não-admin usando metaSelecionada
+                  const vendedoras = (metaAdminDetalhes?.vendedoras ?? metaSelecionada?.vendedoras ?? []);
+                  if (!vendedoras || vendedoras.length === 0) return null;
                   return (
                     <Row className="mb-3">
                       <Col>
@@ -2270,22 +2429,65 @@ const MetaLojas: React.FC = () => {
                               <thead>
                                 <tr>
                                   <th>Nome</th>
+                                  <th>% Comissão</th>
+                                  <th>Comissão (R$)</th>
+                                  <th>% Comissão sobre Prof./Parc.</th>
+                                  <th>Comissão sobre Prof./Parc. (R$)</th>
                                   <th>Qtd Metas</th>
                                   <th>Total Comissão</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {vendedoras.map((v: any) => {
-                                  const total = (v?.metasProdutos ?? []).reduce((acc: number, mp: any) => {
+                                  const metasArray = (v?.metasProdutos ?? v?.metas_produtos ?? []);
+                                  // 1) Soma das comissões de metas (base para Profissional/Parceiras)
+                                  const metasTotal = metasArray.reduce((acc: number, mp: any) => {
                                     const qv = mp?.qtdVendido ?? 0; const qm = mp?.qtdMeta ?? 0; const vv = mp?.valorVendido ?? 0; const p = mp?.percentualSobreVenda ?? 0;
                                     const c = mp?.valorComissao != null ? mp.valorComissao : (qv >= qm ? (vv * p) / 100 : 0);
                                     return acc + c;
                                   }, 0);
+
+                                  // 2) Preferir valores já calculados
+                                  const percVendaTotal = Number(v?.percentualComissaoVendaTotal ?? v?.percentual_comissao_venda_total ?? 0);
+                                  const percProfParceiras = Number(v?.percentualComissaoProfissionalParceiras ?? v?.percentual_comissao_profissional_parceiras ?? 0);
+                                  const comVendaTotalInformado = Number(v?.valorComissaoVendaTotal ?? v?.valor_comissao_venda_total ?? 0);
+                                  const comProfParceiras = Number(v?.valorComissaoProfissionalParceiras ?? v?.valor_comissao_profissional_parceiras ?? 0);
+                                  let totalComissao = Number(v?.valorComissaoTotal ?? v?.valor_comissao_total ?? 0);
+                                  if (!totalComissao && (comVendaTotalInformado || comProfParceiras)) {
+                                    totalComissao = comVendaTotalInformado + comProfParceiras;
+                                  }
+
+                                  // 3) Fallback: calcular a partir das bases e percentuais
+                                  if (!totalComissao) {
+                                    const totalVendido = Number(v?.valorVendidoTotal ?? v?.valor_vendido_total ?? 0);
+                                    const esmaltes = Number(v?.esmaltes ?? 0);
+                                    const valorVendidoMake = Number(v?.valorVendidoMake ?? v?.valor_vendido_make ?? 0);
+                                    const baseVendaTotal = totalVendido - esmaltes - valorVendidoMake - metasTotal;
+                                    const vendaTotalCalc = (baseVendaTotal * percVendaTotal) / 100;
+                                    const profParceirasCalc = (metasTotal * percProfParceiras) / 100;
+                                    totalComissao = vendaTotalCalc + profParceirasCalc;
+                                  }
+
+                                  // Comissão de venda total para exibição (preferir informada, senão calcular)
+                                  const totalVendidoBase = Number(v?.valorVendidoTotal ?? v?.valor_vendido_total ?? 0);
+                                  const esmaltesBase = Number(v?.esmaltes ?? 0);
+                                  const valorVendidoMakeBase = Number(v?.valorVendidoMake ?? v?.valor_vendido_make ?? 0);
+                                  const baseVendaTotalExib = totalVendidoBase - esmaltesBase - valorVendidoMakeBase - metasTotal;
+                                  const comVendaTotalCalc = (baseVendaTotalExib * percVendaTotal) / 100;
+                                  const comVendaTotal = comVendaTotalInformado || comVendaTotalCalc;
+
+                                  // Comissão sobre Profissional/Parceiras para exibição (preferir informada, senão calcular)
+                                  const comProfParceirasExib = comProfParceiras || ((metasTotal * percProfParceiras) / 100);
+
                                   return (
                                     <tr key={v?.id || v?.nome}>
                                       <td>{v?.nome}</td>
-                                      <td>{(v?.metasProdutos ?? []).length}</td>
-                                      <td>R$ {Number(total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                      <td>{percVendaTotal}%</td>
+                                      <td>R$ {Number(comVendaTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                      <td>{percProfParceiras}%</td>
+                                      <td>R$ {Number(comProfParceirasExib).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                      <td>{metasArray.length}</td>
+                                      <td>R$ {Number(totalComissao).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                                     </tr>
                                   );
                                 })}
@@ -2550,7 +2752,7 @@ const MetaLojas: React.FC = () => {
                         <tr>
                           <th>Produto/Marca</th>
                           <th>Qtd. Meta</th>
-                          <th>% Sobre Venda</th>
+                          <th>%Venda/Meta</th>
                           <th>Ações</th>
                         </tr>
                       </thead>
@@ -2705,12 +2907,12 @@ const MetaLojas: React.FC = () => {
             <Table striped bordered hover size="sm">
               <thead>
                 <tr>
-                  <th>Nome Produto/Marca</th>
+                  <th>Nome Produto/Marca/Cadastro</th>
                   <th>Qtd Meta</th>
-                  <th>Qtd Vendido</th>
-                  <th>% Sobre Venda</th>
-                  <th>Valor Vendido</th>
-                  <th>Valor Comissão</th>
+                  <th>Qtd Vendido/Completada</th>
+                  <th>%Venda/Meta</th>
+                  <th>Valor Vendido/Meta</th>
+                  <th>Comissão</th>
                   <th>Ações</th>
                 </tr>
               </thead>
@@ -2723,7 +2925,7 @@ const MetaLojas: React.FC = () => {
                         size="sm"
                         value={meta.nomeProdutoMarca}
                         onChange={(e) => onAtualizarMeta(funcionarioId, meta.id, 'nomeProdutoMarca', e.target.value, tipoFuncionario)}
-                        placeholder="Nome do produto/marca"
+                        placeholder="Nome do produto/marca/cadastro"
                       />
                     </td>
                     <td>

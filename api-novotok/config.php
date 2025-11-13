@@ -38,8 +38,8 @@ class Config {
                     'host' => 'localhost',
                     'name' => 'novotok',
                     'username' => 'root',
-                    'password' => '123456',
-                    // 'password' => '@Ntkti1793',
+                    // 'password' => '123456',
+                    'password' => '@Ntkti1793',
                     'charset' => 'utf8mb4'
                 ],
                 'debug' => true,

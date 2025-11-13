@@ -235,8 +235,8 @@ try {
     }
 
     function salvarVendedoras($conn, $meta_id, $vendedoras) {
-        $sql = "INSERT INTO meta_loja_vendedoras (id, meta_loja_id, nome, funcao, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, quantidade_malka, valor_malka) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO meta_loja_vendedoras (id, meta_loja_id, nome, funcao, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, bijou_make_bolsas, percentual_comissao_venda_total, valor_comissao_venda_total, percentual_comissao_profissional_parceiras, valor_comissao_profissional_parceiras, valor_comissao_total) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
         
         foreach ($vendedoras as $vendedora) {
@@ -247,8 +247,12 @@ try {
             $esmaltes = $vendedora->esmaltes ?? 0;
             $profissionalParceiras = $vendedora->profissionalParceiras ?? $vendedora->profissional_parceiras ?? 0;
             $valorVendidoMake = $vendedora->valorVendidoMake ?? $vendedora->valor_vendido_make ?? 0;
-            $quantidadeMalka = $vendedora->quantidadeMalka ?? $vendedora->quantidade_malka ?? 0;
-            $valorMalka = $vendedora->valorMalka ?? $vendedora->valor_malka ?? 0;
+            $bijouMakeBolsas = $vendedora->bijouMakeBolsas ?? $vendedora->bijou_make_bolsas ?? 0;
+            $percentualComissaoVendaTotal = $vendedora->percentualComissaoVendaTotal ?? $vendedora->percentual_comissao_venda_total ?? 0;
+            $valorComissaoVendaTotal = $vendedora->valorComissaoVendaTotal ?? $vendedora->valor_comissao_venda_total ?? 0;
+            $percentualComissaoProfissionais = $vendedora->percentualComissaoProfissionalParceiras ?? $vendedora->percentual_comissao_profissional_parceiras ?? 0;
+            $valorComissaoProfissionais = $vendedora->valorComissaoProfissionalParceiras ?? $vendedora->valor_comissao_profissional_parceiras ?? 0;
+            $valorComissaoTotal = $vendedora->valorComissaoTotal ?? $vendedora->valor_comissao_total ?? 0;
             
             $stmt->bindValue(1, $vendedora_id);
             $stmt->bindValue(2, $meta_id);
@@ -258,8 +262,12 @@ try {
             $stmt->bindValue(6, converterValorMonetario($esmaltes));
             $stmt->bindValue(7, converterValorMonetario($profissionalParceiras));
             $stmt->bindValue(8, converterValorMonetario($valorVendidoMake));
-            $stmt->bindValue(9, is_numeric($quantidadeMalka) ? (int)$quantidadeMalka : 0);
-            $stmt->bindValue(10, converterValorMonetario($valorMalka));
+            $stmt->bindValue(9, converterValorMonetario($bijouMakeBolsas));
+            $stmt->bindValue(10, is_numeric($percentualComissaoVendaTotal) ? (float)$percentualComissaoVendaTotal : 0);
+            $stmt->bindValue(11, converterValorMonetario($valorComissaoVendaTotal));
+            $stmt->bindValue(12, is_numeric($percentualComissaoProfissionais) ? (float)$percentualComissaoProfissionais : 0);
+            $stmt->bindValue(13, converterValorMonetario($valorComissaoProfissionais));
+            $stmt->bindValue(14, converterValorMonetario($valorComissaoTotal));
             $stmt->execute();
             
             // Salvar metas de produtos da vendedora
@@ -303,8 +311,8 @@ try {
     function salvarGerente($conn, $meta_id, $gerente) {
         if (!$gerente) return;
         
-        $sql = "INSERT INTO meta_loja_gerente (id, meta_loja_id, nome, funcao, percentual_meta_geral, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, quantidade_malka, valor_malka, bijou_make_bolsas) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO meta_loja_gerente (id, meta_loja_id, nome, funcao, percentual_meta_geral, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, bijou_make_bolsas) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
         
         // Aceitar tanto camelCase quanto snake_case
@@ -312,8 +320,6 @@ try {
         $esmaltes = is_array($gerente) ? ($gerente['esmaltes'] ?? 0) : ($gerente->esmaltes ?? 0);
         $profissionalParceiras = is_array($gerente) ? ($gerente['profissionalParceiras'] ?? $gerente['profissional_parceiras'] ?? 0) : ($gerente->profissionalParceiras ?? $gerente->profissional_parceiras ?? 0);
         $valorVendidoMake = is_array($gerente) ? ($gerente['valorVendidoMake'] ?? $gerente['valor_vendido_make'] ?? 0) : ($gerente->valorVendidoMake ?? $gerente->valor_vendido_make ?? 0);
-        $quantidadeMalka = is_array($gerente) ? ($gerente['quantidadeMalka'] ?? $gerente['quantidade_malka'] ?? 0) : ($gerente->quantidadeMalka ?? $gerente->quantidade_malka ?? 0);
-        $valorMalka = is_array($gerente) ? ($gerente['valorMalka'] ?? $gerente['valor_malka'] ?? 0) : ($gerente->valorMalka ?? $gerente->valor_malka ?? 0);
         $bijouMakeBolsas = is_array($gerente) ? ($gerente['bijouMakeBolsas'] ?? $gerente['bijou_make_bolsas'] ?? 0) : ($gerente->bijouMakeBolsas ?? $gerente->bijou_make_bolsas ?? 0);
         $percentualMetaGeral = is_array($gerente) ? ($gerente['percentualMetaGeral'] ?? $gerente['percentual_meta_geral'] ?? 0) : ($gerente->percentualMetaGeral ?? $gerente->percentual_meta_geral ?? 0);
 
@@ -327,9 +333,7 @@ try {
         $stmt->bindValue(7, $esmaltes);
         $stmt->bindValue(8, $profissionalParceiras);
         $stmt->bindValue(9, $valorVendidoMake);
-        $stmt->bindValue(10, $quantidadeMalka);
-        $stmt->bindValue(11, $valorMalka);
-        $stmt->bindValue(12, $bijouMakeBolsas);
+        $stmt->bindValue(10, $bijouMakeBolsas);
         $stmt->execute();
         
         // Salvar metas de produtos do gerente

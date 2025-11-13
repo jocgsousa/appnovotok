@@ -53,6 +53,7 @@ try {
                 valor_vendido_make DECIMAL(15,2) NOT NULL DEFAULT 0,
                 quantidade_malka INT NOT NULL DEFAULT 0,
                 valor_malka DECIMAL(15,2) NOT NULL DEFAULT 0,
+                bijou_make_bolsas DECIMAL(15,2) NOT NULL DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 INDEX idx_meta_loja_vendedoras_meta_id (meta_loja_id),

@@ -131,7 +131,7 @@ try {
     }
 
     $vendedoras = [];
-    $stmt = $conn->prepare("SELECT id, nome, funcao, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, quantidade_malka, valor_malka FROM meta_loja_vendedoras WHERE meta_loja_id = ?");
+    $stmt = $conn->prepare("SELECT id, nome, funcao, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, bijou_make_bolsas FROM meta_loja_vendedoras WHERE meta_loja_id = ?");
     $stmt->bindValue(1, $meta_id);
     $stmt->execute();
     while ($vend = $stmt->fetch(PDO::FETCH_ASSOC)) {
@@ -148,7 +148,7 @@ try {
         $vendedoras_bijou[] = $vb;
     }
 
-    $stmt = $conn->prepare("SELECT id, nome, funcao, percentual_meta_geral, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, quantidade_malka, valor_malka, bijou_make_bolsas FROM meta_loja_gerente WHERE meta_loja_id = ?");
+    $stmt = $conn->prepare("SELECT id, nome, funcao, percentual_meta_geral, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, bijou_make_bolsas FROM meta_loja_gerente WHERE meta_loja_id = ?");
     $stmt->bindValue(1, $meta_id);
     $stmt->execute();
     $gerente = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -259,8 +259,8 @@ try {
 
     // Seção: Vendedoras
     $sheet->setCellValue('A' . $currentRow, 'VENDEDORAS');
-    $sheet->mergeCells('A' . $currentRow . ':H' . $currentRow);
-    aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':H' . $currentRow, 'FF3498DB');
+    $sheet->mergeCells('A' . $currentRow . ':G' . $currentRow);
+    aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':G' . $currentRow, 'FF3498DB');
     $currentRow++;
     $sheet->setCellValue('A' . $currentRow, 'Nome');
     $sheet->setCellValue('B' . $currentRow, 'Função');
@@ -268,9 +268,8 @@ try {
     $sheet->setCellValue('D' . $currentRow, 'Esmaltes');
     $sheet->setCellValue('E' . $currentRow, 'Profissional Parceiras');
     $sheet->setCellValue('F' . $currentRow, 'Valor Vendido Make');
-    $sheet->setCellValue('G' . $currentRow, 'Quantidade Malka');
-    $sheet->setCellValue('H' . $currentRow, 'Valor Malka');
-    aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':H' . $currentRow);
+    $sheet->setCellValue('G' . $currentRow, 'Bijou Make Bolsas');
+    aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':G' . $currentRow);
     $currentRow++;
     foreach ($vendedoras as $vend) {
         $sheet->setCellValue('A' . $currentRow, $vend['nome']);
@@ -279,9 +278,8 @@ try {
         $sheet->setCellValue('D' . $currentRow, (int)$vend['esmaltes']);
         $sheet->setCellValue('E' . $currentRow, (int)$vend['profissional_parceiras']);
         $sheet->setCellValue('F' . $currentRow, (float)$vend['valor_vendido_make']);
-        $sheet->setCellValue('G' . $currentRow, (int)$vend['quantidade_malka']);
-        $sheet->setCellValue('H' . $currentRow, (float)$vend['valor_malka']);
-        aplicarEstiloDados($sheet, 'A' . $currentRow . ':H' . $currentRow);
+        $sheet->setCellValue('G' . $currentRow, (float)$vend['bijou_make_bolsas']);
+        aplicarEstiloDados($sheet, 'A' . $currentRow . ':G' . $currentRow);
         $currentRow++;
 
         // Metas de produtos da vendedora
@@ -359,8 +357,8 @@ try {
     // Seção: Gerente
     if ($gerente) {
         $sheet->setCellValue('A' . $currentRow, 'GERENTE');
-        $sheet->mergeCells('A' . $currentRow . ':J' . $currentRow);
-        aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':J' . $currentRow, 'FFE67E22');
+        $sheet->mergeCells('A' . $currentRow . ':H' . $currentRow);
+        aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':H' . $currentRow, 'FFE67E22');
         $currentRow++;
         $sheet->setCellValue('A' . $currentRow, 'Nome');
         $sheet->setCellValue('B' . $currentRow, 'Função');
@@ -369,10 +367,8 @@ try {
         $sheet->setCellValue('E' . $currentRow, 'Esmaltes');
         $sheet->setCellValue('F' . $currentRow, 'Profissional Parceiras');
         $sheet->setCellValue('G' . $currentRow, 'Valor Vendido Make');
-        $sheet->setCellValue('H' . $currentRow, 'Quantidade Malka');
-        $sheet->setCellValue('I' . $currentRow, 'Valor Malka');
-        $sheet->setCellValue('J' . $currentRow, 'Bijou Make Bolsas');
-        aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':J' . $currentRow);
+        $sheet->setCellValue('H' . $currentRow, 'Bijou Make Bolsas');
+        aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':H' . $currentRow);
         $currentRow++;
         $sheet->setCellValue('A' . $currentRow, $gerente['nome']);
         $sheet->setCellValue('B' . $currentRow, $gerente['funcao']);
@@ -381,10 +377,8 @@ try {
         $sheet->setCellValue('E' . $currentRow, (int)$gerente['esmaltes']);
         $sheet->setCellValue('F' . $currentRow, (int)$gerente['profissional_parceiras']);
         $sheet->setCellValue('G' . $currentRow, (float)$gerente['valor_vendido_make']);
-        $sheet->setCellValue('H' . $currentRow, (int)$gerente['quantidade_malka']);
-        $sheet->setCellValue('I' . $currentRow, (float)$gerente['valor_malka']);
-        $sheet->setCellValue('J' . $currentRow, (float)$gerente['bijou_make_bolsas']);
-        aplicarEstiloDados($sheet, 'A' . $currentRow . ':J' . $currentRow);
+        $sheet->setCellValue('H' . $currentRow, (float)$gerente['bijou_make_bolsas']);
+        aplicarEstiloDados($sheet, 'A' . $currentRow . ':H' . $currentRow);
         $currentRow++;
 
         // Metas de produtos do gerente

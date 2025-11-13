@@ -17,7 +17,7 @@ function columnExists(PDO $conn, string $table, string $column): bool {
 
 function addColumnIfMissing(PDO $conn, string $table, string $column, string $definition, array &$actions) {
     if (!columnExists($conn, $table, $column)) {
-        $sql = "ALTER TABLE $table ADD COLUMN $definition";
+        $sql = "ALTER TABLE $table ADD COLUMN $column $definition";
         $conn->exec($sql);
         $actions[] = [
             'table' => $table,
@@ -86,16 +86,28 @@ function main() {
         addColumnIfMissing($conn, 'meta_loja_vendedoras', 'esmaltes', 'INT NOT NULL DEFAULT 0', $actions);
         addColumnIfMissing($conn, 'meta_loja_vendedoras', 'profissional_parceiras', 'INT NOT NULL DEFAULT 0', $actions);
         addColumnIfMissing($conn, 'meta_loja_vendedoras', 'valor_vendido_make', 'DECIMAL(15,2) NOT NULL DEFAULT 0', $actions);
-        addColumnIfMissing($conn, 'meta_loja_vendedoras', 'quantidade_malka', 'INT NOT NULL DEFAULT 0', $actions);
-        addColumnIfMissing($conn, 'meta_loja_vendedoras', 'valor_malka', 'DECIMAL(15,2) NOT NULL DEFAULT 0', $actions);
+        addColumnIfMissing($conn, 'meta_loja_vendedoras', 'bijou_make_bolsas', 'DECIMAL(15,2) NOT NULL DEFAULT 0', $actions);
 
         addColumnIfMissing($conn, 'meta_loja_gerente', 'valor_vendido_total', 'DECIMAL(15,2) NOT NULL DEFAULT 0', $actions);
         addColumnIfMissing($conn, 'meta_loja_gerente', 'esmaltes', 'INT NOT NULL DEFAULT 0', $actions);
         addColumnIfMissing($conn, 'meta_loja_gerente', 'profissional_parceiras', 'INT NOT NULL DEFAULT 0', $actions);
         addColumnIfMissing($conn, 'meta_loja_gerente', 'valor_vendido_make', 'DECIMAL(15,2) NOT NULL DEFAULT 0', $actions);
-        addColumnIfMissing($conn, 'meta_loja_gerente', 'quantidade_malka', 'INT NOT NULL DEFAULT 0', $actions);
-        addColumnIfMissing($conn, 'meta_loja_gerente', 'valor_malka', 'DECIMAL(15,2) NOT NULL DEFAULT 0', $actions);
-        addColumnIfMissing($conn, 'meta_loja_gerente', 'bijou_make_bolsas', 'INT NOT NULL DEFAULT 0', $actions);
+        // Garantir bijou_make_bolsas como DECIMAL em meta_loja_gerente
+        if (!columnExists($conn, 'meta_loja_gerente', 'bijou_make_bolsas')) {
+            addColumnIfMissing($conn, 'meta_loja_gerente', 'bijou_make_bolsas', 'DECIMAL(15,2) NOT NULL DEFAULT 0', $actions);
+        } else {
+            // Ajustar tipo se necessário
+            $conn->exec("ALTER TABLE meta_loja_gerente MODIFY COLUMN bijou_make_bolsas DECIMAL(15,2) NOT NULL DEFAULT 0");
+            $actions[] = ['table' => 'meta_loja_gerente', 'action' => 'MODIFY COLUMN', 'column' => 'bijou_make_bolsas', 'definition' => 'DECIMAL(15,2) NOT NULL DEFAULT 0'];
+        }
+
+        // Garantir tipo DECIMAL em meta_loja_vendedoras_bijou
+        if (!columnExists($conn, 'meta_loja_vendedoras_bijou', 'bijou_make_bolsas')) {
+            addColumnIfMissing($conn, 'meta_loja_vendedoras_bijou', 'bijou_make_bolsas', 'DECIMAL(15,2) NOT NULL DEFAULT 0', $actions);
+        } else {
+            $conn->exec("ALTER TABLE meta_loja_vendedoras_bijou MODIFY COLUMN bijou_make_bolsas DECIMAL(15,2) NOT NULL DEFAULT 0");
+            $actions[] = ['table' => 'meta_loja_vendedoras_bijou', 'action' => 'MODIFY COLUMN', 'column' => 'bijou_make_bolsas', 'definition' => 'DECIMAL(15,2) NOT NULL DEFAULT 0'];
+        }
 
         addColumnIfMissing($conn, 'meta_loja_campanhas', 'descricao', 'TEXT', $actions);
 
