@@ -131,7 +131,7 @@ try {
     }
 
     $vendedoras = [];
-    $stmt = $conn->prepare("SELECT id, nome, funcao, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, bijou_make_bolsas FROM meta_loja_vendedoras WHERE meta_loja_id = ?");
+    $stmt = $conn->prepare("SELECT id, nome, funcao, valor_vendido_total, esmaltes, profissional_parceiras, valor_vendido_make, bijou_make_bolsas, percentual_comissao_venda_total, valor_comissao_venda_total, percentual_comissao_profissional_parceiras, valor_comissao_profissional_parceiras, valor_comissao_total FROM meta_loja_vendedoras WHERE meta_loja_id = ?");
     $stmt->bindValue(1, $meta_id);
     $stmt->execute();
     while ($vend = $stmt->fetch(PDO::FETCH_ASSOC)) {
@@ -231,11 +231,11 @@ try {
 
         // Metas de produtos da operadora
         if (!empty($op['metas_produtos'])) {
-            $sheet->setCellValue('A' . $currentRow, 'Metas de Produtos');
+            $sheet->setCellValue('A' . $currentRow, 'Metas de Produtos/Marcas/Cadastro de ' . (isset($op['nome']) ? $op['nome'] : '-'));
             $sheet->mergeCells('A' . $currentRow . ':F' . $currentRow);
             aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':F' . $currentRow, 'FF95A5A6');
             $currentRow++;
-            $sheet->setCellValue('A' . $currentRow, 'Produto/Marca');
+            $sheet->setCellValue('A' . $currentRow, 'Produto/Marca/Cadastro');
             $sheet->setCellValue('B' . $currentRow, 'Qtd Meta');
             $sheet->setCellValue('C' . $currentRow, 'Qtd Vendido');
             $sheet->setCellValue('D' . $currentRow, '% Sobre Venda');
@@ -259,8 +259,8 @@ try {
 
     // Seção: Vendedoras
     $sheet->setCellValue('A' . $currentRow, 'VENDEDORAS');
-    $sheet->mergeCells('A' . $currentRow . ':G' . $currentRow);
-    aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':G' . $currentRow, 'FF3498DB');
+    $sheet->mergeCells('A' . $currentRow . ':M' . $currentRow);
+    aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':M' . $currentRow, 'FF3498DB');
     $currentRow++;
     $sheet->setCellValue('A' . $currentRow, 'Nome');
     $sheet->setCellValue('B' . $currentRow, 'Função');
@@ -269,7 +269,14 @@ try {
     $sheet->setCellValue('E' . $currentRow, 'Profissional Parceiras');
     $sheet->setCellValue('F' . $currentRow, 'Valor Vendido Make');
     $sheet->setCellValue('G' . $currentRow, 'Bijou Make Bolsas');
-    aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':G' . $currentRow);
+    // Novas colunas de comissão, conforme a view
+    $sheet->setCellValue('H' . $currentRow, '% Comissão');
+    $sheet->setCellValue('I' . $currentRow, 'Comissão (R$)');
+    $sheet->setCellValue('J' . $currentRow, '% Comissão sobre Prof./Parc.');
+    $sheet->setCellValue('K' . $currentRow, 'Comissão sobre Prof./Parc. (R$)');
+    $sheet->setCellValue('L' . $currentRow, 'Qtd Metas');
+    $sheet->setCellValue('M' . $currentRow, 'Total Comissão');
+    aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':M' . $currentRow);
     $currentRow++;
     foreach ($vendedoras as $vend) {
         $sheet->setCellValue('A' . $currentRow, $vend['nome']);
@@ -279,16 +286,64 @@ try {
         $sheet->setCellValue('E' . $currentRow, (int)$vend['profissional_parceiras']);
         $sheet->setCellValue('F' . $currentRow, (float)$vend['valor_vendido_make']);
         $sheet->setCellValue('G' . $currentRow, (float)$vend['bijou_make_bolsas']);
-        aplicarEstiloDados($sheet, 'A' . $currentRow . ':G' . $currentRow);
+        // Calcular metasTotal (soma das comissões de metas de produtos)
+        $metasTotal = 0.0;
+        if (!empty($vend['metas_produtos'])) {
+            foreach ($vend['metas_produtos'] as $mpCalc) {
+                $qv = isset($mpCalc['qtd_vendido']) ? (int)$mpCalc['qtd_vendido'] : 0;
+                $qm = isset($mpCalc['qtd_meta']) ? (int)$mpCalc['qtd_meta'] : 0;
+                $vv = isset($mpCalc['valor_vendido']) ? (float)$mpCalc['valor_vendido'] : 0.0;
+                $p  = isset($mpCalc['percentual_sobre_venda']) ? (float)$mpCalc['percentual_sobre_venda'] : 0.0;
+                $c  = isset($mpCalc['valor_comissao']) ? (float)$mpCalc['valor_comissao'] : (($qv >= $qm) ? ($vv * $p) / 100.0 : 0.0);
+                $metasTotal += $c;
+            }
+        }
+
+        // Percentuais e valores informados
+        $percVendaTotal = isset($vend['percentual_comissao_venda_total']) ? (float)$vend['percentual_comissao_venda_total'] : 0.0;
+        $percProfParceiras = isset($vend['percentual_comissao_profissional_parceiras']) ? (float)$vend['percentual_comissao_profissional_parceiras'] : 0.0;
+        $comVendaTotalInformado = isset($vend['valor_comissao_venda_total']) ? (float)$vend['valor_comissao_venda_total'] : 0.0;
+        $comProfParceirasInformado = isset($vend['valor_comissao_profissional_parceiras']) ? (float)$vend['valor_comissao_profissional_parceiras'] : 0.0;
+        $totalComissaoInformado = isset($vend['valor_comissao_total']) ? (float)$vend['valor_comissao_total'] : 0.0;
+
+        // Fallbacks conforme a view
+        $totalVendidoBase = isset($vend['valor_vendido_total']) ? (float)$vend['valor_vendido_total'] : 0.0;
+        $esmaltesBase = isset($vend['esmaltes']) ? (int)$vend['esmaltes'] : 0;
+        $valorVendidoMakeBase = isset($vend['valor_vendido_make']) ? (float)$vend['valor_vendido_make'] : 0.0;
+        $baseVendaTotal = $totalVendidoBase - $esmaltesBase - $valorVendidoMakeBase - $metasTotal;
+        $comVendaTotalCalc = ($baseVendaTotal * $percVendaTotal) / 100.0;
+        $comVendaTotal = $comVendaTotalInformado ?: $comVendaTotalCalc;
+        $comProfParceirasCalc = ($metasTotal * $percProfParceiras) / 100.0;
+        $comProfParceiras = $comProfParceirasInformado ?: $comProfParceirasCalc;
+
+        $totalComissao = $totalComissaoInformado;
+        if (!$totalComissao) {
+            if ($comVendaTotal || $comProfParceiras) {
+                $totalComissao = $comVendaTotal + $comProfParceiras;
+            } else {
+                $totalComissao = $comVendaTotalCalc + $comProfParceirasCalc;
+            }
+        }
+
+        $qtdMetas = !empty($vend['metas_produtos']) ? count($vend['metas_produtos']) : 0;
+
+        $sheet->setCellValue('H' . $currentRow, $percVendaTotal);
+        $sheet->setCellValue('I' . $currentRow, (float)$comVendaTotal);
+        $sheet->setCellValue('J' . $currentRow, $percProfParceiras);
+        $sheet->setCellValue('K' . $currentRow, (float)$comProfParceiras);
+        $sheet->setCellValue('L' . $currentRow, (int)$qtdMetas);
+        $sheet->setCellValue('M' . $currentRow, (float)$totalComissao);
+
+        aplicarEstiloDados($sheet, 'A' . $currentRow . ':M' . $currentRow);
         $currentRow++;
 
         // Metas de produtos da vendedora
         if (!empty($vend['metas_produtos'])) {
-            $sheet->setCellValue('A' . $currentRow, 'Metas de Produtos');
+            $sheet->setCellValue('A' . $currentRow, 'Metas de Produtos/Marcas/Cadastro de ' . (isset($vend['nome']) ? $vend['nome'] : '-'));
             $sheet->mergeCells('A' . $currentRow . ':F' . $currentRow);
             aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':F' . $currentRow, 'FF95A5A6');
             $currentRow++;
-            $sheet->setCellValue('A' . $currentRow, 'Produto/Marca');
+            $sheet->setCellValue('A' . $currentRow, 'Produto/Marca/Cadastro');
             $sheet->setCellValue('B' . $currentRow, 'Qtd Meta');
             $sheet->setCellValue('C' . $currentRow, 'Qtd Vendido');
             $sheet->setCellValue('D' . $currentRow, '% Sobre Venda');
@@ -312,27 +367,57 @@ try {
 
     // Seção: Vendedoras Bijou
     $sheet->setCellValue('A' . $currentRow, 'VENDEDORAS BIJOU');
-    $sheet->mergeCells('A' . $currentRow . ':D' . $currentRow);
-    aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':D' . $currentRow, 'FF9B59B6');
+    $sheet->mergeCells('A' . $currentRow . ':G' . $currentRow);
+    aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':G' . $currentRow, 'FF9B59B6');
     $currentRow++;
     $sheet->setCellValue('A' . $currentRow, 'Nome');
     $sheet->setCellValue('B' . $currentRow, 'Função');
     $sheet->setCellValue('C' . $currentRow, 'Bijou Make Bolsas');
-    aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':C' . $currentRow);
+    $sheet->setCellValue('D' . $currentRow, '% Comissão');
+    $sheet->setCellValue('E' . $currentRow, 'Comissão (R$)');
+    $sheet->setCellValue('F' . $currentRow, 'Qtd Metas');
+    $sheet->setCellValue('G' . $currentRow, 'Total Comissão');
+    aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':G' . $currentRow);
     $currentRow++;
     foreach ($vendedoras_bijou as $vb) {
         $sheet->setCellValue('A' . $currentRow, $vb['nome']);
         $sheet->setCellValue('B' . $currentRow, $vb['funcao']);
         $sheet->setCellValue('C' . $currentRow, (float)$vb['bijou_make_bolsas']);
-        aplicarEstiloDados($sheet, 'A' . $currentRow . ':C' . $currentRow);
+
+        // Calcular totais de metas e comissões de Bijou
+        $metasTotalBijou = 0.0;
+        if (!empty($vb['metas_produtos'])) {
+            foreach ($vb['metas_produtos'] as $mpCalc) {
+                $qv = isset($mpCalc['qtd_vendido']) ? (int)$mpCalc['qtd_vendido'] : 0;
+                $qm = isset($mpCalc['qtd_meta']) ? (int)$mpCalc['qtd_meta'] : 0;
+                $vv = isset($mpCalc['valor_vendido']) ? (float)$mpCalc['valor_vendido'] : 0.0;
+                $p  = isset($mpCalc['percentual_sobre_venda']) ? (float)$mpCalc['percentual_sobre_venda'] : 0.0;
+                $c  = isset($mpCalc['valor_comissao']) ? (float)$mpCalc['valor_comissao'] : (($qv >= $qm) ? ($vv * $p) / 100.0 : 0.0);
+                $metasTotalBijou += $c;
+            }
+        }
+        $percBijou = isset($vb['percentual_comissao_bijou']) ? (float)$vb['percentual_comissao_bijou'] : 0.0;
+        $bijouValor = isset($vb['bijou_make_bolsas']) ? (float)$vb['bijou_make_bolsas'] : 0.0;
+        $bijouComissaoInformada = isset($vb['valor_comissao_bijou']) ? (float)$vb['valor_comissao_bijou'] : 0.0;
+        $bijouComissaoCalc = ($bijouValor * $percBijou) / 100.0;
+        $bijouComissao = $bijouComissaoInformada ?: $bijouComissaoCalc;
+        $qtdMetasBijou = !empty($vb['metas_produtos']) ? count($vb['metas_produtos']) : 0;
+        $totalBijou = $metasTotalBijou + $bijouComissao;
+
+        $sheet->setCellValue('D' . $currentRow, $percBijou);
+        $sheet->setCellValue('E' . $currentRow, (float)$bijouComissao);
+        $sheet->setCellValue('F' . $currentRow, (int)$qtdMetasBijou);
+        $sheet->setCellValue('G' . $currentRow, (float)$totalBijou);
+
+        aplicarEstiloDados($sheet, 'A' . $currentRow . ':G' . $currentRow);
         $currentRow++;
 
         if (!empty($vb['metas_produtos'])) {
-            $sheet->setCellValue('A' . $currentRow, 'Metas de Produtos');
+            $sheet->setCellValue('A' . $currentRow, 'Metas de Produtos/Marcas/Cadastro de ' . (isset($vb['nome']) ? $vb['nome'] : '-'));
             $sheet->mergeCells('A' . $currentRow . ':F' . $currentRow);
             aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':F' . $currentRow, 'FF95A5A6');
             $currentRow++;
-            $sheet->setCellValue('A' . $currentRow, 'Produto/Marca');
+            $sheet->setCellValue('A' . $currentRow, 'Produto/Marca/Cadastro');
             $sheet->setCellValue('B' . $currentRow, 'Qtd Meta');
             $sheet->setCellValue('C' . $currentRow, 'Qtd Vendido');
             $sheet->setCellValue('D' . $currentRow, '% Sobre Venda');
@@ -357,37 +442,44 @@ try {
     // Seção: Gerente
     if ($gerente) {
         $sheet->setCellValue('A' . $currentRow, 'GERENTE');
-        $sheet->mergeCells('A' . $currentRow . ':H' . $currentRow);
-        aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':H' . $currentRow, 'FFE67E22');
+        $sheet->mergeCells('A' . $currentRow . ':I' . $currentRow);
+        aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':I' . $currentRow, 'FFE67E22');
         $currentRow++;
         $sheet->setCellValue('A' . $currentRow, 'Nome');
         $sheet->setCellValue('B' . $currentRow, 'Função');
         $sheet->setCellValue('C' . $currentRow, '% Meta Geral');
-        $sheet->setCellValue('D' . $currentRow, 'Valor Vendido Total');
-        $sheet->setCellValue('E' . $currentRow, 'Esmaltes');
-        $sheet->setCellValue('F' . $currentRow, 'Profissional Parceiras');
-        $sheet->setCellValue('G' . $currentRow, 'Valor Vendido Make');
-        $sheet->setCellValue('H' . $currentRow, 'Bijou Make Bolsas');
-        aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':H' . $currentRow);
+        $sheet->setCellValue('D' . $currentRow, 'Comissão (R$)');
+        $sheet->setCellValue('E' . $currentRow, 'Valor Vendido Total');
+        $sheet->setCellValue('F' . $currentRow, 'Esmaltes');
+        $sheet->setCellValue('G' . $currentRow, 'Profissional Parceiras');
+        $sheet->setCellValue('H' . $currentRow, 'Valor Vendido Make');
+        $sheet->setCellValue('I' . $currentRow, 'Bijou Make Bolsas');
+        aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':I' . $currentRow);
         $currentRow++;
         $sheet->setCellValue('A' . $currentRow, $gerente['nome']);
         $sheet->setCellValue('B' . $currentRow, $gerente['funcao']);
         $sheet->setCellValue('C' . $currentRow, (float)$gerente['percentual_meta_geral']);
-        $sheet->setCellValue('D' . $currentRow, (float)$gerente['valor_vendido_total']);
-        $sheet->setCellValue('E' . $currentRow, (int)$gerente['esmaltes']);
-        $sheet->setCellValue('F' . $currentRow, (int)$gerente['profissional_parceiras']);
-        $sheet->setCellValue('G' . $currentRow, (float)$gerente['valor_vendido_make']);
-        $sheet->setCellValue('H' . $currentRow, (float)$gerente['bijou_make_bolsas']);
-        aplicarEstiloDados($sheet, 'A' . $currentRow . ':H' . $currentRow);
+        // Comissão do gerente conforme a view: valor_venda_loja_total * (percentual_meta_geral ajustado) / 100
+        $valorTotalLoja = isset($meta['valor_venda_loja_total']) ? (float)$meta['valor_venda_loja_total'] : 0.0;
+        $pRaw = isset($gerente['percentual_meta_geral']) ? (float)$gerente['percentual_meta_geral'] : 0.0;
+        $pFrac = ($pRaw > 1.0) ? ($pRaw / 100.0) : $pRaw; // 0.08 => 0.08%, 8 => 8% => 0.08%
+        $comissaoGerente = $valorTotalLoja * ($pFrac / 100.0);
+        $sheet->setCellValue('D' . $currentRow, (float)$comissaoGerente);
+        $sheet->setCellValue('E' . $currentRow, (float)$gerente['valor_vendido_total']);
+        $sheet->setCellValue('F' . $currentRow, (int)$gerente['esmaltes']);
+        $sheet->setCellValue('G' . $currentRow, (int)$gerente['profissional_parceiras']);
+        $sheet->setCellValue('H' . $currentRow, (float)$gerente['valor_vendido_make']);
+        $sheet->setCellValue('I' . $currentRow, (float)$gerente['bijou_make_bolsas']);
+        aplicarEstiloDados($sheet, 'A' . $currentRow . ':I' . $currentRow);
         $currentRow++;
 
         // Metas de produtos do gerente
         if (!empty($gerente['metas_produtos'])) {
-            $sheet->setCellValue('A' . $currentRow, 'Metas de Produtos');
+            $sheet->setCellValue('A' . $currentRow, 'Metas de Produtos/Marcas/Cadastro de ' . (isset($gerente['nome']) ? $gerente['nome'] : '-'));
             $sheet->mergeCells('A' . $currentRow . ':F' . $currentRow);
             aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':F' . $currentRow, 'FF95A5A6');
             $currentRow++;
-            $sheet->setCellValue('A' . $currentRow, 'Produto/Marca');
+            $sheet->setCellValue('A' . $currentRow, 'Produto/Marca/Cadastro');
             $sheet->setCellValue('B' . $currentRow, 'Qtd Meta');
             $sheet->setCellValue('C' . $currentRow, 'Qtd Vendido');
             $sheet->setCellValue('D' . $currentRow, '% Sobre Venda');
@@ -446,11 +538,11 @@ try {
             aplicarEstiloDados($sheet, 'A' . $currentRow . ':B' . $currentRow);
             $currentRow++;
             if (!empty($f['metas_produtos'])) {
-                $sheet->setCellValue('A' . $currentRow, 'Metas de Produtos');
+                $sheet->setCellValue('A' . $currentRow, 'Metas de Produtos/Marcas/Cadastro de ' . (isset($f['nome']) ? $f['nome'] : '-'));
                 $sheet->mergeCells('A' . $currentRow . ':F' . $currentRow);
                 aplicarEstiloCabecalho($sheet, 'A' . $currentRow . ':F' . $currentRow, 'FF95A5A6');
                 $currentRow++;
-                $sheet->setCellValue('A' . $currentRow, 'Produto/Marca');
+                $sheet->setCellValue('A' . $currentRow, 'Produto/Marca/Cadastro');
                 $sheet->setCellValue('B' . $currentRow, 'Qtd Meta');
                 $sheet->setCellValue('C' . $currentRow, 'Qtd Vendido');
                 $sheet->setCellValue('D' . $currentRow, '% Sobre Venda');
@@ -473,7 +565,7 @@ try {
     }
 
     // Ajustar largura de colunas
-    foreach (range('A', 'J') as $col) {
+    foreach (range('A', 'M') as $col) {
         $sheet->getColumnDimension($col)->setAutoSize(true);
     }
 

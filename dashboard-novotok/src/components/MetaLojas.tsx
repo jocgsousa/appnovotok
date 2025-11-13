@@ -620,9 +620,10 @@ const MetaLojas: React.FC = () => {
       const profParc = toNumeroSeguro(atualizado.profissionalParceiras);
       const percTotal = Number(atualizado.percentualComissaoVendaTotal || 0);
       const percProf = Number(atualizado.percentualComissaoProfissionalParceiras || 0);
-      const baseTotal = total - esmaltes - make - profParc;
+      const metasSum = somarComissoesMetas(atualizado.metasProdutos || []);
+      const baseTotal = total - esmaltes - make - profParc - metasSum;
       const comissaoTotal = (baseTotal * percTotal) / 100;
-      const comissaoProf = (profParc * percProf) / 100;
+      const comissaoProf = (profParc * percProf) / 100 + metasSum;
       atualizado.valorComissaoVendaTotal = comissaoTotal;
       atualizado.valorComissaoProfissionalParceiras = comissaoProf;
       atualizado.valorComissaoTotal = comissaoTotal + comissaoProf;
@@ -710,15 +711,15 @@ const MetaLojas: React.FC = () => {
           const total = toNumeroSeguro(v.valorVendidoTotal);
           const esmaltes = toNumeroSeguro(v.esmaltes);
           const make = toNumeroSeguro(v.valorVendidoMake);
+          const profParc = toNumeroSeguro(v.profissionalParceiras);
           const percTotal = Number(v.percentualComissaoVendaTotal || 0);
           const percProf = Number(v.percentualComissaoProfissionalParceiras || 0);
-          const baseTotal = total - esmaltes - make - soma;
+          const baseTotal = total - esmaltes - make - profParc - soma;
           const comissaoTotal = (baseTotal * percTotal) / 100;
-          const comissaoProf = (soma * percProf) / 100;
+          const comissaoProf = (profParc * percProf) / 100 + soma;
           return { 
             ...v, 
             metasProdutos: metasAtualizadas, 
-            profissionalParceiras: soma,
             valorComissaoVendaTotal: comissaoTotal,
             valorComissaoProfissionalParceiras: comissaoProf,
             valorComissaoTotal: comissaoTotal + comissaoProf
@@ -758,15 +759,15 @@ const MetaLojas: React.FC = () => {
           const total = toNumeroSeguro(v.valorVendidoTotal);
           const esmaltes = toNumeroSeguro(v.esmaltes);
           const make = toNumeroSeguro(v.valorVendidoMake);
+          const profParc = toNumeroSeguro(v.profissionalParceiras);
           const percTotal = Number(v.percentualComissaoVendaTotal || 0);
           const percProf = Number(v.percentualComissaoProfissionalParceiras || 0);
-          const baseTotal = total - esmaltes - make - soma;
+          const baseTotal = total - esmaltes - make - profParc - soma;
           const comissaoTotal = (baseTotal * percTotal) / 100;
-          const comissaoProf = (soma * percProf) / 100;
+          const comissaoProf = (profParc * percProf) / 100 + soma;
           return { 
             ...v, 
             metasProdutos: metasAtualizadas, 
-            profissionalParceiras: soma,
             valorComissaoVendaTotal: comissaoTotal,
             valorComissaoProfissionalParceiras: comissaoProf,
             valorComissaoTotal: comissaoTotal + comissaoProf
@@ -812,15 +813,15 @@ const MetaLojas: React.FC = () => {
           const total = toNumeroSeguro(v.valorVendidoTotal);
           const esmaltes = toNumeroSeguro(v.esmaltes);
           const make = toNumeroSeguro(v.valorVendidoMake);
+          const profParc = toNumeroSeguro(v.profissionalParceiras);
           const percTotal = Number(v.percentualComissaoVendaTotal || 0);
           const percProf = Number(v.percentualComissaoProfissionalParceiras || 0);
-          const baseTotal = total - esmaltes - make - soma;
+          const baseTotal = total - esmaltes - make - profParc - soma;
           const comissaoTotal = (baseTotal * percTotal) / 100;
-          const comissaoProf = (soma * percProf) / 100;
+          const comissaoProf = (profParc * percProf) / 100 + soma;
           return { 
             ...v, 
             metasProdutos: metasAtualizadas, 
-            profissionalParceiras: soma,
             valorComissaoVendaTotal: comissaoTotal,
             valorComissaoProfissionalParceiras: comissaoProf,
             valorComissaoTotal: comissaoTotal + comissaoProf
@@ -1189,15 +1190,15 @@ const MetaLojas: React.FC = () => {
           const total = toNumeroSeguro(v.valorVendidoTotal);
           const esmaltes = toNumeroSeguro(v.esmaltes);
           const make = toNumeroSeguro(v.valorVendidoMake);
+          const profParc = toNumeroSeguro(v.profissionalParceiras);
           const percTotal = Number(v.percentualComissaoVendaTotal || 0);
           const percProf = Number(v.percentualComissaoProfissionalParceiras || 0);
-          const baseTotal = total - esmaltes - make - soma;
+          const baseTotal = total - esmaltes - make - profParc - soma;
           const comissaoTotal = (baseTotal * percTotal) / 100;
-          const comissaoProf = (soma * percProf) / 100;
+          const comissaoProf = (profParc * percProf) / 100 + soma;
           return { 
             ...v, 
             metasProdutos: metasAtualizadas, 
-            profissionalParceiras: soma,
             valorComissaoVendaTotal: comissaoTotal,
             valorComissaoProfissionalParceiras: comissaoProf,
             valorComissaoTotal: comissaoTotal + comissaoProf
@@ -1258,6 +1259,11 @@ const MetaLojas: React.FC = () => {
   };
 
   const abrirModalEditar = async (meta: MetaLoja) => {
+    // Bloquear edição se meta estiver finalizada
+    if (meta.status !== 'ativa') {
+      setError('Esta meta está finalizada. Reative para editar.');
+      return;
+    }
     try {
       setLoading(true);
       setModalModo('editar');
@@ -1383,6 +1389,22 @@ const MetaLojas: React.FC = () => {
     } catch (err) {
       console.error('Erro ao finalizar meta:', err);
       setError('Erro ao finalizar meta. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const reativarMeta = async (meta: MetaLoja) => {
+    if (!isAdmin) return;
+    if (!window.confirm(`Reativar meta da loja ${meta.filialNome} (${meta.periodo})?`)) return;
+    try {
+      setLoading(true);
+      await metasLojasApiService.reativarMetaLoja(meta.id);
+      await carregarDados();
+      setSuccess('Meta reativada com sucesso!');
+    } catch (err) {
+      console.error('Erro ao reativar meta:', err);
+      setError('Erro ao reativar meta. Tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -1540,7 +1562,7 @@ const MetaLojas: React.FC = () => {
                           </Button>
                         </OverlayTrigger>
                         <OverlayTrigger placement="top" overlay={<Tooltip>Editar</Tooltip>}>
-                          <Button variant="secondary" onClick={() => abrirModalEditar(meta)}>
+                          <Button variant="secondary" onClick={() => abrirModalEditar(meta)} disabled={meta.status !== 'ativa'}>
                             <i className="bi bi-pencil"></i>
                             <span className="ms-1">Editar</span>
                           </Button>
@@ -1558,6 +1580,14 @@ const MetaLojas: React.FC = () => {
                                 <Button variant="warning" onClick={() => finalizarMeta(meta)}>
                                   <i className="bi bi-check2-circle"></i>
                                   <span className="ms-1">Finalizar</span>
+                                </Button>
+                              </OverlayTrigger>
+                            )}
+                            {meta.status === 'concluida' && (
+                              <OverlayTrigger placement="top" overlay={<Tooltip>Reativar Meta</Tooltip>}>
+                                <Button variant="info" onClick={() => reativarMeta(meta)}>
+                                  <i className="bi bi-arrow-counterclockwise"></i>
+                                  <span className="ms-1">Reativar</span>
                                 </Button>
                               </OverlayTrigger>
                             )}
@@ -1892,13 +1922,7 @@ const MetaLojas: React.FC = () => {
                                 <Form.Control
                                   type="text"
                                   value={formatarNumeroParaExibicao(vendedora.profissionalParceiras)}
-                                  readOnly={(vendedora.metasProdutos ?? []).length > 0}
-                                  className={(vendedora.metasProdutos ?? []).length > 0 ? 'bg-light' : undefined}
-                                  onChange={(e) => {
-                                    if ((vendedora.metasProdutos ?? []).length === 0) {
-                                      handleInputMonetario(e.target.value, (valor) => atualizarVendedora(vendedora.id, 'profissionalParceiras', valor));
-                                    }
-                                  }}
+                                  onChange={(e) => handleInputMonetario(e.target.value, (valor) => atualizarVendedora(vendedora.id, 'profissionalParceiras', valor))}
                                   placeholder="R$ 0,00"
                                 />
                               </Form.Group>
@@ -2462,9 +2486,10 @@ const MetaLojas: React.FC = () => {
                                     const totalVendido = Number(v?.valorVendidoTotal ?? v?.valor_vendido_total ?? 0);
                                     const esmaltes = Number(v?.esmaltes ?? 0);
                                     const valorVendidoMake = Number(v?.valorVendidoMake ?? v?.valor_vendido_make ?? 0);
-                                    const baseVendaTotal = totalVendido - esmaltes - valorVendidoMake - metasTotal;
+                                    const profParFallback = Number(v?.profissionalParceiras ?? 0);
+                                    const baseVendaTotal = totalVendido - esmaltes - valorVendidoMake - profParFallback - metasTotal;
                                     const vendaTotalCalc = (baseVendaTotal * percVendaTotal) / 100;
-                                    const profParceirasCalc = (metasTotal * percProfParceiras) / 100;
+                                    const profParceirasCalc = (profParFallback * percProfParceiras) / 100 + metasTotal;
                                     totalComissao = vendaTotalCalc + profParceirasCalc;
                                   }
 
@@ -2472,12 +2497,13 @@ const MetaLojas: React.FC = () => {
                                   const totalVendidoBase = Number(v?.valorVendidoTotal ?? v?.valor_vendido_total ?? 0);
                                   const esmaltesBase = Number(v?.esmaltes ?? 0);
                                   const valorVendidoMakeBase = Number(v?.valorVendidoMake ?? v?.valor_vendido_make ?? 0);
-                                  const baseVendaTotalExib = totalVendidoBase - esmaltesBase - valorVendidoMakeBase - metasTotal;
+                                  const profParcBase = Number(v?.profissionalParceiras ?? 0);
+                                  const baseVendaTotalExib = totalVendidoBase - esmaltesBase - valorVendidoMakeBase - profParcBase - metasTotal;
                                   const comVendaTotalCalc = (baseVendaTotalExib * percVendaTotal) / 100;
                                   const comVendaTotal = comVendaTotalInformado || comVendaTotalCalc;
 
                                   // Comissão sobre Profissional/Parceiras para exibição (preferir informada, senão calcular)
-                                  const comProfParceirasExib = comProfParceiras || ((metasTotal * percProfParceiras) / 100);
+                                  const comProfParceirasExib = comProfParceiras || (((profParcBase * percProfParceiras) / 100) + metasTotal);
 
                                   return (
                                     <tr key={v?.id || v?.nome}>

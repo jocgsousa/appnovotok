@@ -141,8 +141,8 @@ try {
     // Iniciar transação
     $conn->beginTransaction();
 
-    // Verificar se a meta existe
-    $sqlCheckMeta = "SELECT id FROM metas_lojas WHERE id = ?";
+    // Verificar se a meta existe e se está ativa
+    $sqlCheckMeta = "SELECT id, ativo FROM metas_lojas WHERE id = ?";
     $stmtCheckMeta = $conn->prepare($sqlCheckMeta);
     $stmtCheckMeta->bindValue(1, $meta_id);
     $stmtCheckMeta->execute();
@@ -153,6 +153,18 @@ try {
         echo json_encode([
             "status" => 0,
             "message" => "Meta de loja não encontrada."
+        ]);
+        exit;
+    }
+
+    $metaAtual = $stmtCheckMeta->fetch(PDO::FETCH_ASSOC);
+    if ((int)$metaAtual['ativo'] === 0) {
+        $conn->rollBack();
+        http_response_code(403);
+        echo json_encode([
+            "status" => 0,
+            "message" => "Meta finalizada. Reative para editar.",
+            "data" => ["id" => $meta_id]
         ]);
         exit;
     }

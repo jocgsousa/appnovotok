@@ -177,6 +177,16 @@ class MetasLojasApiService {
     }
   }
 
+  // Reativar meta de loja (somente admin)
+  async reativarMetaLoja(id: string): Promise<void> {
+    try {
+      await api.patch('/reativar_meta_loja.php', { id });
+    } catch (error) {
+      console.error('Erro ao reativar meta de loja:', error);
+      throw error;
+    }
+  }
+
   async cadastrarMetaLoja(meta: {
     lojaId: string;
     nomeLoja: string;
