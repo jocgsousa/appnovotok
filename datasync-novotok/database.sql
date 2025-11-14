@@ -61,6 +61,36 @@ CREATE TABLE IF NOT EXISTS filiais (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+-- Adiciona a coluna filial_id em usuarios e cria a FK para filiais
+-- Este bloco garante ambientes existentes migrarem sem recriar a tabela
+SET @col_exists := (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'usuarios'
+      AND COLUMN_NAME = 'filial_id'
+);
+
+SET @sql_add_col := IF(@col_exists = 0,
+    'ALTER TABLE usuarios ADD COLUMN filial_id INT NULL',
+    'SELECT 1');
+PREPARE stmt1 FROM @sql_add_col; EXECUTE stmt1; DEALLOCATE PREPARE stmt1;
+
+-- Cria chave estrangeira se ainda não existir
+-- Algumas versões do MySQL não suportam IF NOT EXISTS para FK, então protegemos via verificação simples
+SET @fk_exists := (
+    SELECT COUNT(*)
+    FROM information_schema.KEY_COLUMN_USAGE
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'usuarios'
+      AND CONSTRAINT_NAME = 'fk_usuarios_filial_id'
+);
+
+SET @sql_add_fk := IF(@fk_exists = 0,
+    'ALTER TABLE usuarios ADD CONSTRAINT fk_usuarios_filial_id FOREIGN KEY (filial_id) REFERENCES filiais(id) ON DELETE SET NULL',
+    'SELECT 1');
+PREPARE stmt2 FROM @sql_add_fk; EXECUTE stmt2; DEALLOCATE PREPARE stmt2;
+
 CREATE TABLE IF NOT EXISTS vendedores (
     id INT AUTO_INCREMENT PRIMARY KEY,
     rca VARCHAR(20) NOT NULL UNIQUE,

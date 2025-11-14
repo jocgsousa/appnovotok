@@ -112,6 +112,24 @@ try {
         $params[':tipo_usuario'] = $data->tipo_usuario;
     }
     
+    if (isset($data->filial_id)) {
+        $filial_id = is_null($data->filial_id) ? null : intval($data->filial_id);
+        if (!is_null($filial_id)) {
+            // Validar filial existente
+            $check_filial = "SELECT id FROM filiais WHERE id = :filial_id";
+            $stmt_filial = $db->prepare($check_filial);
+            $stmt_filial->bindParam(':filial_id', $filial_id, PDO::PARAM_INT);
+            $stmt_filial->execute();
+            if ($stmt_filial->rowCount() === 0) {
+                http_response_code(400);
+                echo json_encode(array("success" => false, "message" => "Filial inválida"));
+                exit;
+            }
+        }
+        $campos[] = "filial_id = :filial_id";
+        $params[':filial_id'] = $filial_id; // poderá ser null
+    }
+
     if (isset($data->ativo)) {
         $campos[] = "ativo = :ativo";
         $params[':ativo'] = $data->ativo ? 1 : 0;
@@ -212,4 +230,4 @@ try {
         "error" => $e->getMessage()
     ));
 }
-?> 
+?>

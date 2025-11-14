@@ -38,7 +38,7 @@ try {
     $db = $database->getConnection();
     
     // Consultar os dados do usuário
-    $query = "SELECT id, nome, email, cpf, telefone, tipo_usuario, ativo, created_at, updated_at 
+    $query = "SELECT id, nome, email, cpf, telefone, tipo_usuario, ativo, filial_id, created_at, updated_at 
               FROM usuarios 
               WHERE id = :id";
     
@@ -90,6 +90,7 @@ try {
             "telefone" => $row['telefone'],
             "tipo_usuario" => $row['tipo_usuario'],
             "ativo" => (bool)$row['ativo'],
+            "filial_id" => isset($row['filial_id']) ? ($row['filial_id'] !== null ? intval($row['filial_id']) : null) : null,
             "created_at" => $row['created_at'],
             "updated_at" => $row['updated_at'],
             "permissoes" => $permissoes
@@ -113,4 +114,4 @@ try {
         "error" => $e->getMessage()
     ));
 }
-?> 
+?>

@@ -404,10 +404,16 @@ const MetaLojas: React.FC = () => {
   
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
 
-  // Carregar dados da API
+  // Carregar dados da API (recarrega quando usuário é definido)
   useEffect(() => {
+    // Definir filtros padrão por filial do usuário se não-admin
+    if (!isAdmin && usuario?.filial_id != null) {
+      const filialStr = usuario.filial_id.toString();
+      if (!filtroFilial) setFiltroFilial(filialStr);
+      if (!novaMetaFilial) setNovaMetaFilial(filialStr);
+    }
     carregarDados();
-  }, []);
+  }, [usuario]);
 
   const carregarDados = async () => {
     try {
@@ -415,8 +421,12 @@ const MetaLojas: React.FC = () => {
       const gruposData = await metasLojasApiService.listarGruposMetas();
       setGruposMetas(gruposData);
 
-      // Carregar metas de lojas
-      const metasData = await metasLojasApiService.listarMetasLojas();
+      // Carregar metas de lojas (não-admin restrito à própria filial)
+      const metasData = await metasLojasApiService.listarMetasLojas(
+        !isAdmin && usuario?.filial_id != null
+          ? { lojaId: usuario.filial_id.toString() }
+          : undefined
+      );
       
       // Converter os dados da API para o formato esperado pelo componente
       const metasFormatadas = metasData.map(meta => {
@@ -461,10 +471,15 @@ const MetaLojas: React.FC = () => {
       const vendedoresData = await listarVendedores();
       setVendedoresAPI(vendedoresData);
 
-      // Carregar filiais da API
+      // Carregar filiais da API e restringir para não-admin
       const filiaisResponse = await listarFiliais();
       if (filiaisResponse.success && filiaisResponse.filiais) {
-        setFiliais(filiaisResponse.filiais);
+        const todas = filiaisResponse.filiais as Filial[];
+        if (!isAdmin && usuario?.filial_id != null) {
+          setFiliais(todas.filter(f => f.id === usuario.filial_id));
+        } else {
+          setFiliais(todas);
+        }
       }
 
     } catch (error) {
@@ -1227,7 +1242,7 @@ const MetaLojas: React.FC = () => {
     const primeiroDiaDoMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
     const ultimoDiaDoMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
 
-    setNovaMetaFilial('');
+    setNovaMetaFilial(!isAdmin && usuario?.filial_id != null ? usuario.filial_id.toString() : '');
     setNovaMetaDataInicio(primeiroDiaDoMes.toISOString().split('T')[0]);
     setNovaMetaDataFim(ultimoDiaDoMes.toISOString().split('T')[0]);
     setNovaMetaValorTotal('');
@@ -1458,8 +1473,9 @@ const MetaLojas: React.FC = () => {
                 <Form.Select 
                   value={filtroFilial}
                   onChange={(e) => setFiltroFilial(e.target.value)}
+                  disabled={!isAdmin && !!usuario?.filial_id}
                 >
-                  <option value="">Todas as filiais</option>
+                  {isAdmin && <option value="">Todas as filiais</option>}
                   {filiais.map(filial => (
                     <option key={filial.id} value={filial.id}>
                       {filial.codigo} - {filial.nome_fantasia}
@@ -1625,21 +1641,22 @@ const MetaLojas: React.FC = () => {
             <Card.Body>
               <Row>
                 <Col md={6}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Filial *</Form.Label>
-                    <Form.Select 
-                      value={novaMetaFilial} 
-                      onChange={(e) => setNovaMetaFilial(e.target.value)}
-                      required
-                    >
-                      <option value="">Selecione uma filial</option>
-                      {filiais.map(filial => (
-                        <option key={filial.id} value={filial.id}>
-                          {filial.codigo} - {filial.nome_fantasia}
-                        </option>
-                      ))}
-                    </Form.Select>
-                  </Form.Group>
+                <Form.Group className="mb-3">
+                  <Form.Label>Filial *</Form.Label>
+                  <Form.Select 
+                    value={novaMetaFilial} 
+                    onChange={(e) => setNovaMetaFilial(e.target.value)}
+                    disabled={!isAdmin && !!usuario?.filial_id}
+                    required
+                  >
+                    <option value="">Selecione uma filial</option>
+                    {filiais.map(filial => (
+                      <option key={filial.id} value={filial.id}>
+                        {filial.codigo} - {filial.nome_fantasia}
+                      </option>
+                    ))}
+                  </Form.Select>
+                </Form.Group>
                 </Col>
                 <Col md={3}>
                   <Form.Group className="mb-3">

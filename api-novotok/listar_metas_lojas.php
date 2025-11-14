@@ -55,6 +55,33 @@ try {
 $database = new Database();
 $conn = $database->getConnection();
 
+// Obter tipo de usuário e possível filial associada
+$is_admin = false;
+$usuario_filial_id = null;
+try {
+    // Buscar tipo de usuário
+    $stmtTipo = $conn->prepare("SELECT tipo_usuario FROM usuarios WHERE id = ? LIMIT 1");
+    $stmtTipo->bindValue(1, $usuario_id);
+    $stmtTipo->execute();
+    $rowTipo = $stmtTipo->fetch(PDO::FETCH_ASSOC);
+    $tipoUsuario = isset($rowTipo['tipo_usuario']) ? strtolower($rowTipo['tipo_usuario']) : null;
+    $is_admin = ($tipoUsuario === 'admin');
+
+    // Verificar se a coluna filial_id existe e obter valor
+    $stmtCheck = $conn->query("SHOW COLUMNS FROM usuarios LIKE 'filial_id'");
+    if ($stmtCheck && $stmtCheck->rowCount() > 0) {
+        $stmtFilial = $conn->prepare("SELECT filial_id FROM usuarios WHERE id = ? LIMIT 1");
+        $stmtFilial->bindValue(1, $usuario_id);
+        $stmtFilial->execute();
+        $rowFilial = $stmtFilial->fetch(PDO::FETCH_ASSOC);
+        if ($rowFilial && isset($rowFilial['filial_id'])) {
+            $usuario_filial_id = (string)$rowFilial['filial_id'];
+        }
+    }
+} catch (Exception $e) {
+    // Ignorar falhas ao obter tipo/filial; seguirá sem restrição adicional
+}
+
 // Função auxiliar para obter nome do mês
 function getNomeMes($mes) {
     $meses = [
@@ -72,6 +99,11 @@ try {
     $ano = isset($_GET['ano']) ? intval($_GET['ano']) : null;
     $ativo = isset($_GET['ativo']) ? $_GET['ativo'] : '';
     $busca = isset($_GET['busca']) ? trim($_GET['busca']) : '';
+
+    // Enforce: usuários não-admin só podem ver sua própria filial
+    if (!$is_admin && !empty($usuario_filial_id)) {
+        $loja_id = $usuario_filial_id; // sobrescreve qualquer loja_id passado
+    }
 
     // Construir a consulta SQL base
     $sql = "SELECT 

@@ -24,6 +24,7 @@ interface Usuario {
   nome: string;
   email: string;
   tipo_usuario: string;
+  filial_id?: number | null;
 }
 
 interface AuthContextData {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Button, Modal, Form, Badge, Tabs, Tab, Alert } from 'react-bootstrap';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
+import { listarFiliais, Filial } from '../services/filiaisService';
 
 interface Usuario {
   id: number;
@@ -11,6 +12,7 @@ interface Usuario {
   telefone: string | null;
   tipo_usuario: string;
   ativo: boolean;
+  filial_id?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -41,6 +43,7 @@ interface FormData {
   confirmarSenha: string;
   tipo_usuario: string;
   ativo: boolean;
+  filial_id: number | null;
 }
 
 const Usuarios: React.FC = () => {
@@ -58,7 +61,8 @@ const Usuarios: React.FC = () => {
     senha: '',
     confirmarSenha: '',
     tipo_usuario: 'operador',
-    ativo: true
+    ativo: true,
+    filial_id: null
   });
   const [permissoes, setPermissoes] = useState<{[key: number]: {visualizar: boolean, criar: boolean, editar: boolean, excluir: boolean}}>({});
   const [menus, setMenus] = useState<{id: number, nome: string, descricao: string, icone: string, rota: string}[]>([]);
@@ -69,6 +73,7 @@ const Usuarios: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [syncingPermissoes, setSyncingPermissoes] = useState(false);
+  const [filiais, setFiliais] = useState<Filial[]>([]);
 
   // Carregar a lista de usuários
   useEffect(() => {
@@ -78,6 +83,17 @@ const Usuarios: React.FC = () => {
   // Carregar menus disponíveis
   useEffect(() => {
     carregarMenus();
+  }, []);
+
+  // Carregar filiais para o seletor
+  useEffect(() => {
+    const carregar = async () => {
+      const response = await listarFiliais();
+      if (response.success && response.filiais) {
+        setFiliais(response.filiais);
+      }
+    };
+    carregar();
   }, []);
 
   const carregarMenus = async () => {
@@ -157,7 +173,8 @@ const Usuarios: React.FC = () => {
           senha: '',
           confirmarSenha: '',
           tipo_usuario: response.data.usuario.tipo_usuario,
-          ativo: response.data.usuario.ativo
+          ativo: response.data.usuario.ativo,
+          filial_id: response.data.usuario.filial_id ?? null
         });
       } else {
         setError('Erro ao carregar detalhes do usuário');
@@ -184,7 +201,8 @@ const Usuarios: React.FC = () => {
         senha: '',
         confirmarSenha: '',
         tipo_usuario: 'operador',
-        ativo: true
+        ativo: true,
+        filial_id: null
       });
       
       // Inicializar todas as permissões como false
@@ -217,7 +235,12 @@ const Usuarios: React.FC = () => {
       const { checked } = e.target as HTMLInputElement;
       setFormData(prev => ({ ...prev, [name]: checked }));
     } else {
-      setFormData(prev => ({ ...prev, [name]: value }));
+      if (name === 'filial_id') {
+        const parsed = value === '' ? null : Number(value);
+        setFormData(prev => ({ ...prev, filial_id: parsed }));
+      } else {
+        setFormData(prev => ({ ...prev, [name]: value }));
+      }
     }
   };
 
@@ -335,6 +358,7 @@ const Usuarios: React.FC = () => {
         // Cadastrar novo usuário
         const response = await api.post('/cadastrar_usuario.php', {
           ...formData,
+          filial_id: formData.filial_id,
           permissoes: permissoesArray
         });
         
@@ -352,6 +376,7 @@ const Usuarios: React.FC = () => {
         const response = await api.put('/atualizar_usuario.php', {
           id: usuarioSelecionado.id,
           ...formData,
+          filial_id: formData.filial_id,
           permissoes: permissoesArray
         });
         
@@ -632,36 +657,56 @@ const Usuarios: React.FC = () => {
                     </Col>
                   </Row>
                   
-                  <Row>
-                    <Col md={6}>
-                      <Form.Group className="mb-3">
-                        <Form.Label>Tipo de Usuário</Form.Label>
-                        <Form.Select 
-                          name="tipo_usuario" 
-                          value={formData.tipo_usuario}
-                          onChange={handleInputChange}
-                          required
-                        >
-                          <option value="admin">Administrador</option>
-                          <option value="gestor">Gestor</option>
-                          <option value="operador">Operador</option>
-                        </Form.Select>
-                      </Form.Group>
-                    </Col>
-                    <Col md={6}>
-                      <Form.Group className="mb-3">
-                        <Form.Label>Status</Form.Label>
-                        <Form.Check 
-                          type="switch"
-                          id="ativo-switch"
-                          label="Ativo"
-                          name="ativo"
-                          checked={formData.ativo}
-                          onChange={(e) => setFormData(prev => ({ ...prev, ativo: e.target.checked }))}
-                        />
-                      </Form.Group>
-                    </Col>
-                  </Row>
+                <Row>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Tipo de Usuário</Form.Label>
+                      <Form.Select 
+                        name="tipo_usuario" 
+                        value={formData.tipo_usuario}
+                        onChange={handleInputChange}
+                        required
+                      >
+                        <option value="admin">Administrador</option>
+                        <option value="gestor">Gestor</option>
+                        <option value="operador">Operador</option>
+                      </Form.Select>
+                    </Form.Group>
+                  </Col>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Status</Form.Label>
+                      <Form.Check 
+                        type="switch"
+                        id="ativo-switch"
+                        label="Ativo"
+                        name="ativo"
+                        checked={formData.ativo}
+                        onChange={(e) => setFormData(prev => ({ ...prev, ativo: e.target.checked }))}
+                      />
+                    </Form.Group>
+                  </Col>
+                </Row>
+
+                <Row>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Filial</Form.Label>
+                      <Form.Select 
+                        name="filial_id"
+                        value={formData.filial_id ?? ''}
+                        onChange={handleInputChange}
+                      >
+                        <option value="">Selecione a filial</option>
+                        {filiais.map((filial) => (
+                          <option key={filial.id} value={filial.id}>
+                            {filial.codigo} - {filial.nome_fantasia}
+                          </option>
+                        ))}
+                      </Form.Select>
+                    </Form.Group>
+                  </Col>
+                </Row>
                   
                   <Row>
                     <Col md={6}>

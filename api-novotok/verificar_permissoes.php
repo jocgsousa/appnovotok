@@ -50,6 +50,24 @@ try {
     }
     
     $usuario = $stmt_usuario->fetch(PDO::FETCH_ASSOC);
+
+    // Tentar obter filial_id do usuário, se a coluna existir
+    $filial_id = null;
+    try {
+        $stmtCheck = $db->query("SHOW COLUMNS FROM usuarios LIKE 'filial_id'");
+        if ($stmtCheck && $stmtCheck->rowCount() > 0) {
+            $stmtFilial = $db->prepare("SELECT filial_id FROM usuarios WHERE id = :id");
+            $stmtFilial->bindParam(':id', $user_id);
+            $stmtFilial->execute();
+            $fila = $stmtFilial->fetch(PDO::FETCH_ASSOC);
+            if ($fila && isset($fila['filial_id'])) {
+                $filial_id = $fila['filial_id'];
+            }
+        }
+    } catch (Exception $e) {
+        // Ignorar caso a coluna não exista ou outra falha ocorra
+        $filial_id = null;
+    }
     
     // Verificar se o usuário está ativo
     if (!$usuario['ativo']) {
@@ -104,7 +122,8 @@ try {
             "id" => $usuario['id'],
             "nome" => $usuario['nome'],
             "email" => $usuario['email'],
-            "tipo_usuario" => $usuario['tipo_usuario']
+            "tipo_usuario" => $usuario['tipo_usuario'],
+            "filial_id" => $filial_id
         ),
         "menus" => $menus_permitidos
     ));
@@ -116,4 +135,4 @@ try {
         "error" => $e->getMessage()
     ));
 }
-?> 
+?>

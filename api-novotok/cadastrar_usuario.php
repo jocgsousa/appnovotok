@@ -65,9 +65,23 @@ try {
     // Limpar o CPF, mantendo apenas números
     $cpf_limpo = preg_replace('/[^0-9]/', '', $data->cpf);
     
+    // Validar filial_id (opcional)
+    $filial_id = isset($data->filial_id) ? intval($data->filial_id) : null;
+    if (!is_null($filial_id)) {
+        $check_filial = "SELECT id FROM filiais WHERE id = :filial_id";
+        $stmt_filial = $db->prepare($check_filial);
+        $stmt_filial->bindParam(':filial_id', $filial_id, PDO::PARAM_INT);
+        $stmt_filial->execute();
+        if ($stmt_filial->rowCount() === 0) {
+            http_response_code(400);
+            echo json_encode(array("success" => false, "message" => "Filial inválida."));
+            exit;
+        }
+    }
+    
     // Preparar a consulta SQL para inserir o usuário
-    $query = "INSERT INTO usuarios (nome, email, senha, cpf, telefone, tipo_usuario, ativo) 
-              VALUES (:nome, :email, :senha, :cpf, :telefone, :tipo_usuario, :ativo)";
+    $query = "INSERT INTO usuarios (nome, email, senha, cpf, telefone, tipo_usuario, ativo, filial_id) 
+              VALUES (:nome, :email, :senha, :cpf, :telefone, :tipo_usuario, :ativo, :filial_id)";
     
     $stmt = $db->prepare($query);
     
@@ -87,6 +101,11 @@ try {
     $stmt->bindParam(':telefone', $telefone);
     $stmt->bindParam(':tipo_usuario', $tipo_usuario);
     $stmt->bindParam(':ativo', $ativo);
+    if (!is_null($filial_id)) {
+        $stmt->bindValue(':filial_id', $filial_id, PDO::PARAM_INT);
+    } else {
+        $stmt->bindValue(':filial_id', null, PDO::PARAM_NULL);
+    }
     
     // Executar a consulta
     if ($stmt->execute()) {
@@ -124,4 +143,4 @@ try {
         "error" => $e->getMessage()
     ));
 }
-?> 
+?>

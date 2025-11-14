@@ -40,7 +40,7 @@ try {
     $ativo = isset($_GET['ativo']) ? $_GET['ativo'] : null;
     
     // Construir a consulta SQL base
-    $sql = "SELECT id, nome, email, cpf, telefone, tipo_usuario, ativo, created_at, updated_at 
+    $sql = "SELECT id, nome, email, cpf, telefone, tipo_usuario, ativo, filial_id, created_at, updated_at 
             FROM usuarios 
             WHERE 1=1";
     
@@ -68,7 +68,7 @@ try {
     }
     
     // Consulta para contar o total de registros
-    $count_sql = str_replace("SELECT id, nome, email, cpf, telefone, tipo_usuario, ativo, created_at, updated_at", "SELECT COUNT(*) as total", $sql);
+    $count_sql = str_replace("SELECT id, nome, email, cpf, telefone, tipo_usuario, ativo, filial_id, created_at, updated_at", "SELECT COUNT(*) as total", $sql);
     $count_stmt = $db->prepare($count_sql);
     
     // Vincular parâmetros para a consulta de contagem
@@ -109,6 +109,7 @@ try {
                 "telefone" => $row['telefone'],
                 "tipo_usuario" => $row['tipo_usuario'],
                 "ativo" => (bool)$row['ativo'],
+                "filial_id" => isset($row['filial_id']) ? ($row['filial_id'] !== null ? intval($row['filial_id']) : null) : null,
                 "created_at" => $row['created_at'],
                 "updated_at" => $row['updated_at']
             );
@@ -148,4 +149,4 @@ try {
         "error" => $e->getMessage()
     ));
 }
-?> 
+?>
