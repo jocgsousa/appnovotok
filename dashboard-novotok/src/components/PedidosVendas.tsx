@@ -13,6 +13,12 @@ interface PedidosVendasProps {
 }
 
 const PedidosVendas: React.FC<PedidosVendasProps> = ({ setError, setSuccess }) => {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const formatDateInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
   // Estados para dados e paginação
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -25,8 +31,8 @@ const PedidosVendas: React.FC<PedidosVendasProps> = ({ setError, setSuccess }) =
   const [filtros, setFiltros] = useState<PedidoFiltros>({
     filial: undefined,
     caixa: undefined,
-    data_inicio: undefined,
-    data_fim: undefined,
+    data_inicio: formatDateInput(firstDay),
+    data_fim: formatDateInput(lastDay),
     pedido: undefined,
     vendedor: undefined,
     status_cancelamento: 'todos'
@@ -73,8 +79,8 @@ const PedidosVendas: React.FC<PedidosVendasProps> = ({ setError, setSuccess }) =
     setFiltros({
       filial: undefined,
       caixa: undefined,
-      data_inicio: undefined,
-      data_fim: undefined,
+      data_inicio: formatDateInput(firstDay),
+      data_fim: formatDateInput(lastDay),
       pedido: undefined,
       status_cancelamento: 'todos'
     });
@@ -113,6 +119,36 @@ const PedidosVendas: React.FC<PedidosVendasProps> = ({ setError, setSuccess }) =
     return { status: 'Normal', variant: 'success', icon: 'bi-check-circle' };
   };
 
+  // Função para somar quantidades de itens vendidos e cancelados
+  const obterTotalItens = (pedido: Pedido) => {
+    const somaVendidos = (pedido.itens || []).reduce((acc, item) => acc + Number(item.QT || 0), 0);
+    const somaCancelados = (pedido.cancelados || []).reduce((acc, item) => acc + Number(item.QT || 0), 0);
+    return somaVendidos + somaCancelados;
+  };
+
+  // Quantidade total de itens vendidos
+  const obterQuantidadeVendidos = (pedido: Pedido) => {
+    return (pedido.itens || []).reduce((acc, item) => acc + Number(item.QT || 0), 0);
+  };
+
+  // Valor total cancelado (R$) com fallback calculado
+  const obterValorTotalCancelado = (pedido: Pedido) => {
+    const valorInformado = Number(pedido.total_cancelados);
+    if (!isNaN(valorInformado) && valorInformado > 0) {
+      return valorInformado;
+    }
+    const somaCanceladosValor = (pedido.cancelados || []).reduce(
+      (acc, item) => acc + Number(item.QT || 0) * Number(item.PVENDA || 0),
+      0
+    );
+    return somaCanceladosValor;
+  };
+
+  // Quantidade total de itens cancelados
+  const obterQuantidadeCancelados = (pedido: Pedido) => {
+    return (pedido.cancelados || []).reduce((acc, item) => acc + Number(item.QT || 0), 0);
+  };
+
   // Definir colunas da tabela
   const columns = [
     { header: 'Pedido', accessor: 'pedido' },
@@ -124,9 +160,29 @@ const PedidosVendas: React.FC<PedidosVendasProps> = ({ setError, setSuccess }) =
       cell: (row: Pedido) => row.data_registro_produto ? format(subHours(parseISO(row.data_registro_produto), 3), 'dd/MM/yyyy HH:mm', { locale: ptBR }) : 'N/A'
     },
     { 
-      header: 'Total', 
+      header: 'Total Vendido', 
       accessor: 'total_itens',
        cell: (row: Pedido) => `R$ ${Number(row.total_itens).toFixed(2)}`
+    },
+    { 
+      header: 'Total Cancelado', 
+      accessor: 'total_cancelados',
+      cell: (row: Pedido) => `R$ ${obterValorTotalCancelado(row).toFixed(2)}`
+    },
+    { 
+      header: 'Itens Vendidos', 
+      accessor: 'total_itens_vendidos',
+      cell: (row: Pedido) => obterQuantidadeVendidos(row)
+    },
+    { 
+      header: 'Itens Cancelados', 
+      accessor: 'total_itens_cancelados',
+      cell: (row: Pedido) => obterQuantidadeCancelados(row)
+    },
+    { 
+      header: 'Total Itens', 
+      accessor: 'total_itens_quantidade',
+      cell: (row: Pedido) => obterTotalItens(row)
     },
     {
       header: 'Status',
@@ -388,4 +444,4 @@ const PedidosVendas: React.FC<PedidosVendasProps> = ({ setError, setSuccess }) =
   );
 };
 
-export default PedidosVendas; 
+export default PedidosVendas;

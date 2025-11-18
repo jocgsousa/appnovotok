@@ -26,6 +26,11 @@ interface RelatorioVendasProps {
 }
 
 const RelatorioVendasComponent: React.FC<RelatorioVendasProps> = ({ setError, setSuccess }) => {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const formatDateInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   // Estados para dados e controle
   const [dadosRelatorio, setDadosRelatorio] = useState<RelatorioVendas | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -36,8 +41,8 @@ const RelatorioVendasComponent: React.FC<RelatorioVendasProps> = ({ setError, se
   const [filtros, setFiltros] = useState<RelatorioFiltros>({
     filial: undefined,
     caixa: undefined,
-    data_inicio: undefined,
-    data_fim: undefined,
+    data_inicio: formatDateInput(firstDay),
+    data_fim: formatDateInput(lastDay),
     vendedor: undefined
   });
 
@@ -129,8 +134,8 @@ const RelatorioVendasComponent: React.FC<RelatorioVendasProps> = ({ setError, se
     setFiltros({
       filial: undefined,
       caixa: undefined,
-      data_inicio: undefined,
-      data_fim: undefined,
+      data_inicio: formatDateInput(firstDay),
+      data_fim: formatDateInput(lastDay),
       vendedor: undefined
     });
     setDadosRelatorio(null);

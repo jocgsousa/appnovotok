@@ -186,7 +186,7 @@ try {
     }
 
     // Buscar vendedoras bijou
-    $sqlVendedorasBijou = "SELECT id, nome, funcao, bijou_make_bolsas, percentual_comissao_bijou, valor_comissao_bijou 
+    $sqlVendedorasBijou = "SELECT id, nome, funcao, bijou_make_bolsas, valor_total_bijou_filial, bijou_make_bolsas_secoes, valor_total_bijou_filial_secoes, percentual_comissao_bijou, valor_comissao_bijou 
                            FROM meta_loja_vendedoras_bijou 
                            WHERE meta_loja_id = ?";
     $stmtVendedorasBijou = $conn->prepare($sqlVendedorasBijou);
@@ -201,6 +201,9 @@ try {
             'nome' => $vendedora['nome'],
             'funcao' => $vendedora['funcao'],
             'bijouMakeBolsas' => (float)$vendedora['bijou_make_bolsas'],
+            'valorTotalBijouFilial' => isset($vendedora['valor_total_bijou_filial']) ? (float)$vendedora['valor_total_bijou_filial'] : 0,
+            'bijouMakeBolsasSecoes' => isset($vendedora['bijou_make_bolsas_secoes']) ? (float)$vendedora['bijou_make_bolsas_secoes'] : 0,
+            'valorTotalBijouFilialSecoes' => isset($vendedora['valor_total_bijou_filial_secoes']) ? (float)$vendedora['valor_total_bijou_filial_secoes'] : 0,
             'percentualComissaoBijou' => isset($vendedora['percentual_comissao_bijou']) ? (float)$vendedora['percentual_comissao_bijou'] : 0,
             'valorComissaoBijou' => isset($vendedora['valor_comissao_bijou']) ? (float)$vendedora['valor_comissao_bijou'] : 0,
             'metasProdutos' => $metasProdutos

@@ -30,6 +30,7 @@ const MonitoramentoVendas: React.FC = () => {
                   <Nav.Item>
                     <Nav.Link eventKey="relatorio">Relatório</Nav.Link>
                   </Nav.Item>
+                  
                 </Nav>
               </Col>
             </Row>
@@ -54,6 +55,7 @@ const MonitoramentoVendas: React.FC = () => {
                       setSuccess={setSuccess}
                     />
                   </Tab.Pane>
+                  
                 </Tab.Content>
               </Col>
             </Row>
@@ -64,4 +66,4 @@ const MonitoramentoVendas: React.FC = () => {
   );
 };
 
-export default MonitoramentoVendas; 
+export default MonitoramentoVendas;

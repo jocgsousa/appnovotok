@@ -1,17 +1,21 @@
-require('dotenv/config');
+const dotenv = require('dotenv');
+// Força que valores definidos no .env sobrescrevam variáveis já existentes,
+// e que definições duplicadas no arquivo respeitem a última ocorrência (ex: bloco Local).
+dotenv.config({ override: true });
 const fs = require('fs');
 const path = require('path');
 const oracledb = require('oracledb');
 const axios = require('axios');
 const schedule = require('node-schedule');
 const moment = require('moment');
+const mysql = require('mysql2/promise');
 
 // Configuração do Oracle Instant Client
 const oracleClientPath = path.resolve(__dirname, 'instantclient_19_25');
 oracledb.initOracleClient({ libDir: oracleClientPath });
 
 // Configurações adicionais do Oracle
-oracledb.fetchAsString = [oracledb.DATE, oracledb.NUMBER];
+oracledb.fetchAsString = [oracledb.DATE];
 oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT;
 
 // Função para registrar logs no arquivo
@@ -77,6 +81,512 @@ function debugValores(label, valores) {
 // Log da URL da API
 console.log(`API URL configurada: ${process.env.API_URL}`);
 writeLog(`API URL configurada: ${process.env.API_URL}`);
+// Log de configuração de MySQL em uso
+console.log(`MySQL alvo: host=${process.env.EXDBHOST} db=${process.env.EXDBNAME} user=${process.env.EXDBUSER}`);
+writeLog(`MySQL alvo: host=${process.env.EXDBHOST} db=${process.env.EXDBNAME} user=${process.env.EXDBUSER}`);
+
+// ===============================
+// Conexão e utilitários MySQL (Bijou Filial)
+// ===============================
+async function criarConexaoMySQL() {
+  const conn = await mysql.createConnection({
+    host: process.env.EXDBHOST,
+    user: process.env.EXDBUSER,
+    password: process.env.EXDBPASS,
+    database: process.env.EXDBNAME,
+    multipleStatements: false
+  });
+  return conn;
+}
+
+async function listarFiliaisMySQL(mysqlConn) {
+  const [rows] = await mysqlConn.execute('SELECT id, codigo FROM filiais');
+  return rows.map(r => ({ id: r.id, codigo: normalizeCodigoFilial(r.codigo) }));
+}
+
+// Listar configuração Bijou/Make/Bolsas por filial no MySQL
+async function listarBijouConfigMySQL(mysqlConn) {
+  const [rows] = await mysqlConn.execute(`
+    SELECT c.filial_id, f.codigo, c.departamentos, c.secoes, c.ativo
+    FROM bijou_filial_config c
+    JOIN filiais f ON f.id = c.filial_id
+    WHERE c.ativo = 1
+  `);
+  return rows.map(r => ({
+    filial_id: r.filial_id,
+    codigo: normalizeCodigoFilial(r.codigo),
+    departamentosCSV: (r.departamentos || '').trim() || null,
+    secoesCSV: (r.secoes || '').trim() || null,
+  }));
+}
+
+// Buscar configuração ativa por código da filial
+async function getBijouConfigForFilial(mysqlConn, filialCodigoNorm) {
+  const [rows] = await mysqlConn.execute(
+    `SELECT c.filial_id, f.codigo, c.departamentos, c.secoes, c.ativo
+     FROM bijou_filial_config c
+     JOIN filiais f ON f.id = c.filial_id
+     WHERE c.ativo = 1 AND f.codigo = ?`
+  , [filialCodigoNorm]);
+  if (!rows || rows.length === 0) return null;
+  const r = rows[0];
+  return {
+    filial_id: r.filial_id,
+    codigo: normalizeCodigoFilial(r.codigo),
+    departamentosCSV: (r.departamentos || '').trim() || null,
+    secoesCSV: (r.secoes || '').trim() || null,
+  };
+}
+
+function csvFromArray(arr) {
+  return (arr || []).filter(Boolean).map(String).join(',');
+}
+
+// Converte uma string CSV em um array de inteiros
+function parseCSVToIntArray(csv) {
+  if (!csv || typeof csv !== 'string') return null;
+  const parts = csv
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  const nums = parts
+    .map(p => parseInt(p, 10))
+    .filter(n => !Number.isNaN(n));
+  return nums.length > 0 ? nums : null;
+}
+
+function firstAndLastDayOfMonth(year, month) {
+  const first = new Date(year, month - 1, 1);
+  // Ensure last day includes end-of-day time to cover all movements
+  const last = new Date(year, month, 0, 23, 59, 59, 999);
+  return { first, last };
+}
+
+// Normaliza código de filial para evitar divergências (zeros à esquerda, espaços)
+function normalizeCodigoFilial(code) {
+  const raw = String(code ?? '').trim();
+  const noLeading = raw.replace(/^0+/, '');
+  return noLeading === '' ? '0' : noLeading;
+}
+
+// ===============================
+// Consulta Oracle Totais Bijou/Make/Bolsas por Filial
+// ===============================
+async function consultarTotaisBijouPorFilial(oracleConnection, params) {
+  const { dtIni, dtFim, filiaisCSV, deptosCSV, secoesCSV } = params;
+
+  const sql = `
+    WITH Vendas AS (
+      SELECT
+        PCNFSAID.CODFILIAL AS CODFILIAL,
+        SUM(
+          ROUND(
+            DECODE(PCMOV.CODOPER,
+              'S', NVL(DECODE(PCNFSAID.CONDVENDA, 7, PCMOV.QTCONT, PCMOV.QT), 0),
+              'ST', NVL(DECODE(PCNFSAID.CONDVENDA, 7, PCMOV.QTCONT, PCMOV.QT), 0),
+              'SM', NVL(DECODE(PCNFSAID.CONDVENDA, 7, PCMOV.QTCONT, PCMOV.QT), 0),
+              'SB', NVL(DECODE(PCNFSAID.CONDVENDA, 7, PCMOV.QTCONT, PCMOV.QT), 0),
+              0
+            ) * NVL(
+              DECODE(PCNFSAID.CONDVENDA,
+                7, NVL(PCMOV.PUNITCONT, 0),
+                NVL(PCMOV.PUNIT, 0) + NVL(PCMOV.VLFRETE, 0) + NVL(PCMOV.VLOUTRASDESP, 0) + NVL(PCMOV.VLFRETE_RATEIO, 0)
+              ), 0
+            ), 2
+          )
+          + ROUND(
+            NVL(PCMOV.QT, 0) * DECODE(PCNFSAID.CONDVENDA, 5, 0, 6, 0, 11, 0, 12, 0,
+              DECODE(PCMOV.CODOPER, 'SB', 0, NVL(PCMOV.VLIPI, 0))
+            ), 2
+          )
+          + ROUND(
+            NVL(PCMOV.QT, 0) * DECODE(PCNFSAID.CONDVENDA, 5, 0, 6, 0, 11, 0, 12, 0,
+              DECODE(PCMOV.CODOPER, 'SB', 0, (NVL(PCMOV.ST, 0) + NVL(PCMOVCOMPLE.VLSTTRANSFCD, 0)))
+            ), 2
+          )
+        ) AS VLTOTAL
+      FROM PCNFSAID
+      JOIN PCMOV ON PCMOV.NUMTRANSVENDA = PCNFSAID.NUMTRANSVENDA AND PCMOV.CODFILIAL = PCNFSAID.CODFILIAL
+      JOIN PCPRODUT ON PCMOV.CODPROD = PCPRODUT.CODPROD
+      LEFT JOIN PCMOVCOMPLE ON PCMOV.NUMTRANSITEM = PCMOVCOMPLE.NUMTRANSITEM
+      WHERE PCMOV.DTMOV BETWEEN :dtIni AND :dtFim
+        -- Importante: não filtrar por DTSAIDA aqui para evitar excluir movimentos válidos
+        AND NVL(PCNFSAID.TIPOVENDA,'X') NOT IN ('SR','DF')
+        AND PCMOV.CODOPER <> 'SR'
+        AND PCMOV.CODOPER <> 'SO'
+        AND PCNFSAID.CODFISCAL NOT IN (522, 622, 722, 532, 632, 732)
+        AND PCNFSAID.CONDVENDA NOT IN (4, 8, 10, 13, 20, 98, 99)
+        AND PCNFSAID.DTCANCEL IS NULL
+        AND TO_NUMBER(PCNFSAID.CODFILIAL) IN (
+          SELECT TO_NUMBER(REGEXP_SUBSTR(:filiaisCSV, '[^,]+', 1, LEVEL))
+          FROM DUAL
+          CONNECT BY REGEXP_SUBSTR(:filiaisCSV, '[^,]+', 1, LEVEL) IS NOT NULL
+        )
+        AND (
+          :deptosCSV IS NULL OR PCPRODUT.CODEPTO IN (
+            SELECT REGEXP_SUBSTR(:deptosCSV, '[^,]+', 1, LEVEL)
+            FROM DUAL
+            CONNECT BY REGEXP_SUBSTR(:deptosCSV, '[^,]+', 1, LEVEL) IS NOT NULL
+          )
+        )
+        AND (
+          :secoesCSV IS NULL OR PCPRODUT.CODSEC IN (
+            SELECT REGEXP_SUBSTR(:secoesCSV, '[^,]+', 1, LEVEL)
+            FROM DUAL
+            CONNECT BY REGEXP_SUBSTR(:secoesCSV, '[^,]+', 1, LEVEL) IS NOT NULL
+          )
+        )
+      GROUP BY PCNFSAID.CODFILIAL
+    ),
+    Devolucoes AS (
+      SELECT
+        NVL(PCNFENT.CODFILIALNF, PCNFENT.CODFILIAL) AS CODFILIAL,
+        SUM(DECODE(PCNFENT.VLTOTAL, 0, PCESTCOM.VLDEVOLUCAO, PCNFENT.VLTOTAL) - NVL(PCNFENT.VLOUTRAS, 0) - NVL(PCNFENT.VLFRETE, 0)) AS VLTOTAL
+      FROM PCNFENT
+      LEFT JOIN PCESTCOM ON PCNFENT.NUMTRANSENT = PCESTCOM.NUMTRANSENT
+      LEFT JOIN PCTABDEV ON PCNFENT.CODDEVOL = PCTABDEV.CODDEVOL
+      LEFT JOIN PCCLIENT ON PCNFENT.CODFORNEC = PCCLIENT.CODCLI
+      LEFT JOIN PCEMPR ON PCNFENT.CODMOTORISTADEVOL = PCEMPR.MATRICULA
+      LEFT JOIN PCUSUARI ON PCNFENT.CODUSURDEVOL = PCUSUARI.CODUSUR
+      LEFT JOIN PCSUPERV ON PCUSUARI.CODSUPERVISOR = PCSUPERV.CODSUPERVISOR
+      LEFT JOIN PCEMPR FUNC ON PCNFENT.CODFUNCLANC = FUNC.MATRICULA
+      LEFT JOIN PCNFSAID ON PCESTCOM.NUMTRANSVENDA = PCNFSAID.NUMTRANSVENDA
+      LEFT JOIN PCDEVCONSUM ON PCNFENT.NUMTRANSENT = PCDEVCONSUM.NUMTRANSENT
+      WHERE TO_NUMBER(NVL(PCNFENT.CODFILIALNF, PCNFENT.CODFILIAL)) IN (
+        SELECT TO_NUMBER(REGEXP_SUBSTR(:filiaisCSV, '[^,]+', 1, LEVEL))
+        FROM DUAL
+        CONNECT BY REGEXP_SUBSTR(:filiaisCSV, '[^,]+', 1, LEVEL) IS NOT NULL
+      )
+        AND PCNFENT.DTENT BETWEEN :dtIni AND :dtFim
+        AND PCNFENT.TIPODESCARGA IN ('6','7','T')
+        AND NVL(PCNFENT.OBS, 'X') <> 'NF CANCELADA'
+        AND PCNFENT.CODFISCAL IN ('131','132','231','232','199','299')
+        AND EXISTS (
+          SELECT 1 FROM PCPRODUT, PCMOV, PCDEPTO, PCSECAO
+          WHERE PCMOV.CODPROD = PCPRODUT.CODPROD
+            AND PCPRODUT.CODEPTO = PCDEPTO.CODEPTO
+            AND PCPRODUT.CODSEC = PCSECAO.CODSEC
+            AND PCMOV.NUMTRANSENT = PCNFENT.NUMTRANSENT
+            AND PCMOV.NUMNOTA = PCNFENT.NUMNOTA
+            AND PCMOV.DTCANCEL IS NULL
+            AND TO_NUMBER(NVL(PCNFENT.CODFILIALNF, PCNFENT.CODFILIAL)) IN (
+              SELECT TO_NUMBER(REGEXP_SUBSTR(:filiaisCSV, '[^,]+', 1, LEVEL))
+              FROM DUAL
+              CONNECT BY REGEXP_SUBSTR(:filiaisCSV, '[^,]+', 1, LEVEL) IS NOT NULL
+            )
+            AND PCNFENT.CODDEVOL = 31
+            AND PCMOV.CODFILIAL = PCNFENT.CODFILIAL
+            AND (
+              :deptosCSV IS NULL OR PCDEPTO.CODEPTO IN (
+                SELECT REGEXP_SUBSTR(:deptosCSV, '[^,]+', 1, LEVEL)
+                FROM DUAL
+                CONNECT BY REGEXP_SUBSTR(:deptosCSV, '[^,]+', 1, LEVEL) IS NOT NULL
+              )
+            )
+            AND (
+              :secoesCSV IS NULL OR PCSECAO.CODSEC IN (
+                SELECT REGEXP_SUBSTR(:secoesCSV, '[^,]+', 1, LEVEL)
+                FROM DUAL
+                CONNECT BY REGEXP_SUBSTR(:secoesCSV, '[^,]+', 1, LEVEL) IS NOT NULL
+              )
+            )
+        )
+        AND NVL(PCNFSAID.CONDVENDA, 0) NOT IN (4, 8, 10, 13, 20, 98, 99)
+        AND PCNFENT.CODDEVOL = 31
+      GROUP BY NVL(PCNFENT.CODFILIALNF, PCNFENT.CODFILIAL)
+    )
+    SELECT V.CODFILIAL,
+           NVL(V.VLTOTAL, 0) - NVL(D.VLTOTAL, 0) AS VLTOTAL
+      FROM Vendas V
+      LEFT JOIN Devolucoes D ON D.CODFILIAL = V.CODFILIAL
+  `;
+
+  const binds = {
+    dtIni,
+    dtFim,
+    filiaisCSV,
+    deptosCSV: deptosCSV || null,
+    secoesCSV: secoesCSV || null
+  };
+
+  const result = await oracleConnection.execute(sql, binds);
+  const rows = result.rows || [];
+  return rows.map(r => ({ codfilial: normalizeCodigoFilial(r.CODFILIAL), valor_total: toNumberSafe(r.VLTOTAL) }));
+}
+
+async function upsertTotaisBijouFilial(mysqlConn, totals, periodo, config) {
+  const { mes, ano, data_inicio, data_fim } = periodo;
+  const { departamentosCSV, secoesCSV } = config;
+  const configKey = `deptos=${departamentosCSV || ''}|secoes=${secoesCSV || ''}`;
+
+  const [filiaisRows] = await mysqlConn.execute('SELECT id, codigo FROM filiais');
+  const filialIdByCodigo = new Map(filiaisRows.map(r => [normalizeCodigoFilial(r.codigo), r.id]));
+
+  const insertSQL = `
+    INSERT INTO bijou_filial_totais
+      (filial_id, codfilial, mes, ano, data_inicio, data_fim, valor_total, config_key, departamentos, secoes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      valor_total = VALUES(valor_total),
+      data_inicio = VALUES(data_inicio),
+      data_fim = VALUES(data_fim),
+      updated_at = CURRENT_TIMESTAMP
+  `;
+
+  for (const t of totals) {
+    const codfilialNorm = normalizeCodigoFilial(t.codfilial);
+    const filial_id = filialIdByCodigo.get(codfilialNorm) || null;
+    if (!filial_id) {
+      console.warn(`[BijouFilial] Aviso: codfilial ${codfilialNorm} não encontrado em filiais. Pulando upsert.`);
+      continue;
+    }
+    await mysqlConn.execute(insertSQL, [
+      filial_id,
+      codfilialNorm,
+      mes,
+      ano,
+      moment(data_inicio).format('YYYY-MM-DD'),
+      moment(data_fim).format('YYYY-MM-DD'),
+      toNumberSafe(t.valor_total),
+      configKey,
+      departamentosCSV || null,
+      secoesCSV || null
+    ]);
+  }
+}
+
+// Modo de teste: sincronizar Bijou apenas para uma filial específica
+async function runBijouTest(filialCodigoInput, dtIniOverride = null, dtFimOverride = null) {
+  const filialCodigoNorm = normalizeCodigoFilial(filialCodigoInput);
+  console.log(`[BijouFilial][TESTE] Iniciando teste para filial código=${filialCodigoNorm}`);
+  let oracleConnection;
+  let mysqlConnection;
+  try {
+    oracleConnection = await oracledb.getConnection({
+      user: process.env.LCDBUSER,
+      password: process.env.LCDBPASS,
+      connectString: `${process.env.LCDBHOST}/${process.env.LCDBNAME}`
+    });
+    mysqlConnection = await criarConexaoMySQL();
+    await ensureBijouTablesExist(mysqlConnection);
+
+    let config = null;
+    try {
+      config = await getBijouConfigForFilial(mysqlConnection, filialCodigoNorm);
+    } catch (e) {
+      console.warn('[BijouFilial][TESTE] Falha ao consultar configuração MySQL, usando fallback .env:', e && e.message ? e.message : e);
+      config = null;
+    }
+    if (!config) {
+      console.error('[BijouFilial][TESTE] Configuração ativa não encontrada no banco para a filial informada. Abortando teste.');
+      return;
+    }
+    const departamentosCSV = config.departamentosCSV;
+    const secoesCSV = config.secoesCSV;
+    console.log(`[BijouFilial][TESTE] Configuração ativa encontrada: deptos=${departamentosCSV || '(todos)'} secoes=${secoesCSV || '(todas)'}`);
+
+    const filiaisCSV = filialCodigoNorm;
+    if (dtIniOverride && dtFimOverride) {
+      const dtIni = moment(dtIniOverride, 'DD/MM/YYYY').startOf('day').toDate();
+      const dtFim = moment(dtFimOverride, 'DD/MM/YYYY').endOf('day').toDate();
+      const mes = moment(dtIniOverride, 'DD/MM/YYYY').month() + 1;
+      const ano = moment(dtIniOverride, 'DD/MM/YYYY').year();
+      console.log(`[BijouFilial][TESTE] Consultando período específico ${moment(dtIni).format('DD/MM/YYYY')} a ${moment(dtFim).format('DD/MM/YYYY')} para filiais=${filiaisCSV} ...`);
+      const totalsPeriodo = await consultarTotaisBijouPorFilial(oracleConnection, {
+        dtIni,
+        dtFim,
+        filiaisCSV,
+        deptosCSV: departamentosCSV,
+        secoesCSV: secoesCSV
+      });
+      console.log(`[BijouFilial][TESTE] Totais período retornados: ${totalsPeriodo.length}`);
+      await upsertTotaisBijouFilial(mysqlConnection, totalsPeriodo, {
+        mes,
+        ano,
+        data_inicio: dtIni,
+        data_fim: dtFim
+      }, { departamentosCSV, secoesCSV });
+      console.log('[BijouFilial][TESTE] Concluído inserção/atualização em bijou_filial_totais (período específico)');
+    } else {
+      const now = new Date();
+      const mesAtual = now.getMonth() + 1;
+      const anoAtual = now.getFullYear();
+      const { first: dtInitAtual, last: dtFimAtual } = firstAndLastDayOfMonth(anoAtual, mesAtual);
+      console.log(`[BijouFilial][TESTE] Consultando mês atual para filiais=${filiaisCSV} ...`);
+      const totalsAtual = await consultarTotaisBijouPorFilial(oracleConnection, {
+        dtIni: dtInitAtual,
+        dtFim: dtFimAtual,
+        filiaisCSV,
+        deptosCSV: departamentosCSV,
+        secoesCSV: secoesCSV
+      });
+      console.log(`[BijouFilial][TESTE] Totais mês atual retornados: ${totalsAtual.length}`);
+      await upsertTotaisBijouFilial(mysqlConnection, totalsAtual, {
+        mes: mesAtual,
+        ano: anoAtual,
+        data_inicio: dtInitAtual,
+        data_fim: dtFimAtual
+      }, { departamentosCSV, secoesCSV });
+
+      const mesAnteriorDate = new Date(anoAtual, mesAtual - 2, 1);
+      const mesAnterior = mesAnteriorDate.getMonth() + 1;
+      const anoAnterior = mesAnteriorDate.getFullYear();
+      const { first: dtInitAnterior, last: dtFimAnterior } = firstAndLastDayOfMonth(anoAnterior, mesAnterior);
+      console.log(`[BijouFilial][TESTE] Consultando mês anterior para filiais=${filiaisCSV} ...`);
+      const totalsAnterior = await consultarTotaisBijouPorFilial(oracleConnection, {
+        dtIni: dtInitAnterior,
+        dtFim: dtFimAnterior,
+        filiaisCSV,
+        deptosCSV: departamentosCSV,
+        secoesCSV: secoesCSV
+      });
+      console.log(`[BijouFilial][TESTE] Totais mês anterior retornados: ${totalsAnterior.length}`);
+      await upsertTotaisBijouFilial(mysqlConnection, totalsAnterior, {
+        mes: mesAnterior,
+        ano: anoAnterior,
+        data_inicio: dtInitAnterior,
+        data_fim: dtFimAnterior
+      }, { departamentosCSV, secoesCSV });
+      console.log('[BijouFilial][TESTE] Concluído inserção/atualização em bijou_filial_totais');
+    }
+    // Mostrar últimos registros para a filial testada
+    await logBijouTotalsForFilial(mysqlConnection, filialCodigoNorm);
+  } catch (err) {
+    console.error('[BijouFilial][TESTE] Erro no teste:', err && err.message ? err.message : err);
+  } finally {
+    try { if (oracleConnection) await oracleConnection.close(); } catch {}
+    try { if (mysqlConnection) await mysqlConnection.end(); } catch {}
+  }
+}
+
+async function syncBijouFilial() {
+  let oracleConnection;
+  let mysqlConnection;
+  try {
+    oracleConnection = await oracledb.getConnection({
+      user: process.env.LCDBUSER,
+      password: process.env.LCDBPASS,
+      connectString: `${process.env.LCDBHOST}/${process.env.LCDBNAME}`
+    });
+
+    mysqlConnection = await criarConexaoMySQL();
+    // Carregar configuração por filial; se não houver, usar env como fallback
+    let configs = [];
+    try {
+      configs = await listarBijouConfigMySQL(mysqlConnection);
+    } catch (e) {
+      console.error('[BijouFilial] Falha ao listar configs MySQL:', e && e.message ? e.message : e);
+      configs = [];
+    }
+    const hasConfigs = Array.isArray(configs) && configs.length > 0;
+
+    if (!hasConfigs) {
+      console.warn('[BijouFilial] Nenhuma configuração ativa encontrada no banco (bijou_filial_config). Sincronização de Bijou por filial não será executada.');
+      return;
+    }
+
+    // Agrupar por par (departamentos,secoes) para consultar em lotes
+    const groups = new Map();
+    for (const cfg of configs) {
+      const key = `deptos=${cfg.departamentosCSV || ''}|secoes=${cfg.secoesCSV || ''}`;
+      if (!groups.has(key)) {
+        groups.set(key, { departamentosCSV: cfg.departamentosCSV, secoesCSV: cfg.secoesCSV, filiais: [] });
+      }
+      // Quando vier de MySQL, cada cfg tem uma única filial (codigo)
+      if (cfg.codigo) {
+        groups.get(key).filiais.push(String(cfg.codigo));
+      }
+      // Fallback: uma configuração única para várias filiais
+      if (cfg.filiaisCSV) {
+        const list = String(cfg.filiaisCSV)
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean);
+        groups.get(key).filiais.push(...list);
+      }
+    }
+
+    console.log(`[BijouFilial] Total de grupos: ${groups.size}`);
+    for (const [k, g] of groups.entries()) {
+      console.log(`[BijouFilial] Grupo ${k} -> filiais: ${Array.from(new Set(g.filiais)).join(',') || '(nenhuma)'}`);
+    }
+
+    // Mês atual
+    const now = new Date();
+    const mesAtual = now.getMonth() + 1;
+    const anoAtual = now.getFullYear();
+    const { first: dtInitAtual, last: dtFimAtual } = firstAndLastDayOfMonth(anoAtual, mesAtual);
+    // Para cada grupo, consultar e upsert para mês atual
+    for (const group of groups.values()) {
+      // Remover duplicidades e garantir que há filiais para consultar
+      const filiaisList = Array.from(new Set(group.filiais.map(String))).filter(Boolean);
+      if (filiaisList.length === 0) {
+        console.warn('[BijouFilial] Grupo sem filiais, ignorando:', {
+          departamentos: group.departamentosCSV,
+          secoes: group.secoesCSV
+        });
+        continue;
+      }
+      const filiaisCSV = csvFromArray(filiaisList);
+      console.log(`[BijouFilial] Consultando mês atual para filiais=${filiaisCSV} deptos=${group.departamentosCSV || '(todos)'} secoes=${group.secoesCSV || '(todas)'} ...`);
+      const totalsAtual = await consultarTotaisBijouPorFilial(oracleConnection, {
+        dtIni: dtInitAtual,
+        dtFim: dtFimAtual,
+        filiaisCSV,
+        deptosCSV: group.departamentosCSV,
+        secoesCSV: group.secoesCSV
+      });
+      console.log(`[BijouFilial] Totais mês atual retornados: ${totalsAtual.length}`);
+      await upsertTotaisBijouFilial(mysqlConnection, totalsAtual, {
+        mes: mesAtual,
+        ano: anoAtual,
+        data_inicio: dtInitAtual,
+        data_fim: dtFimAtual
+      }, { departamentosCSV: group.departamentosCSV, secoesCSV: group.secoesCSV });
+    }
+
+    // Mês anterior
+    const mesAnteriorDate = new Date(anoAtual, mesAtual - 2, 1);
+    const mesAnterior = mesAnteriorDate.getMonth() + 1;
+    const anoAnterior = mesAnteriorDate.getFullYear();
+    const { first: dtInitAnterior, last: dtFimAnterior } = firstAndLastDayOfMonth(anoAnterior, mesAnterior);
+    for (const group of groups.values()) {
+      const filiaisList = Array.from(new Set(group.filiais.map(String))).filter(Boolean);
+      if (filiaisList.length === 0) {
+        console.warn('[BijouFilial] Grupo sem filiais (mês anterior), ignorando:', {
+          departamentos: group.departamentosCSV,
+          secoes: group.secoesCSV
+        });
+        continue;
+      }
+      const filiaisCSV = csvFromArray(filiaisList);
+      console.log(`[BijouFilial] Consultando mês anterior para filiais=${filiaisCSV} deptos=${group.departamentosCSV || '(todos)'} secoes=${group.secoesCSV || '(todas)'} ...`);
+      const totalsAnterior = await consultarTotaisBijouPorFilial(oracleConnection, {
+        dtIni: dtInitAnterior,
+        dtFim: dtFimAnterior,
+        filiaisCSV,
+        deptosCSV: group.departamentosCSV,
+        secoesCSV: group.secoesCSV
+      });
+      console.log(`[BijouFilial] Totais mês anterior retornados: ${totalsAnterior.length}`);
+      await upsertTotaisBijouFilial(mysqlConnection, totalsAnterior, {
+        mes: mesAnterior,
+        ano: anoAnterior,
+        data_inicio: dtInitAnterior,
+        data_fim: dtFimAnterior
+      }, { departamentosCSV: group.departamentosCSV, secoesCSV: group.secoesCSV });
+    }
+
+    console.log(`[BijouFilial] Totais sincronizados: atual (${mesAtual}/${anoAtual}) e anterior (${mesAnterior}/${anoAnterior}).`);
+    writeLog(`[BijouFilial] Totais sincronizados: atual (${mesAtual}/${anoAtual}) e anterior (${mesAnterior}/${anoAnterior}).`);
+  } catch (err) {
+    console.error('[BijouFilial] Erro na sincronização:', err);
+    writeLog(`[BijouFilial] Erro: ${err && err.message ? err.message : String(err)}`);
+  } finally {
+    try { if (oracleConnection) await oracleConnection.close(); } catch {}
+    try { if (mysqlConnection) await mysqlConnection.end(); } catch {}
+  }
+}
 
 // Função para obter token de autenticação
 async function getAuthToken() {
@@ -120,6 +630,43 @@ async function getVendedores(token) {
   } catch (error) {
     writeLog(`Erro ao obter vendedores: ${error.message}`);
     throw error;
+  }
+}
+
+// Busca vendedores por uma lista de RCAs diretamente via consulta SQL,
+// retornando o mesmo formato utilizado por listar_vendedores.php
+async function getVendedoresPorRCAs(token, rcasLista) {
+  try {
+    if (!Array.isArray(rcasLista) || rcasLista.length === 0) {
+      return [];
+    }
+    const rcasCSV = rcasLista.map(r => `'${r}'`).join(',');
+    const query = `SELECT v.id, v.rca, v.nome, v.email, v.filial_id, v.ativo, v.created_at, v.updated_at, f.codigo AS filial_codigo, f.nome_fantasia AS filial_nome
+                   FROM vendedores v
+                   LEFT JOIN filiais f ON v.filial_id = f.id
+                   WHERE v.rca IN (${rcasCSV})`;
+    const response = await axios.post(`${process.env.API_URL}/executar_consulta.php`, { query }, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.data || !response.data.success) {
+      throw new Error(response.data && response.data.message ? response.data.message : 'Falha ao consultar vendedores por RCA');
+    }
+    const result = Array.isArray(response.data.result) ? response.data.result : [];
+    return result.map(r => ({
+      id: Number(r.id),
+      rca: r.rca,
+      nome: r.nome,
+      email: r.email,
+      filial_id: r.filial_id ? Number(r.filial_id) : null,
+      ativo: Boolean(r.ativo),
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+      filial: r.filial_id ? { id: Number(r.filial_id), nome: r.filial_nome, codigo: r.filial_codigo } : null
+    }));
+  } catch (error) {
+    console.error(`Erro ao obter vendedores por RCAs: ${error.message}`);
+    writeLog(`Erro ao obter vendedores por RCAs: ${error.message}`);
+    return [];
   }
 }
 
@@ -365,6 +912,182 @@ async function getVendasDiarias(connection, dataInicial, dataFinal, codFilial, c
   }
 }
 
+// Função para obter totais mensais (VLVENDA e VLDEVOLUCAO) do Oracle por vendedor
+async function getVendasTotaisOracle(connection, dataInicial, dataFinal, codFilial, codUsur, codDepartamento = null, codSecao = null) {
+  try {
+    const dataInicialOracle = moment(dataInicial).format('DD/MM/YYYY');
+    const dataFinalOracle = moment(dataFinal).format('DD/MM/YYYY');
+
+    await connection.execute(`ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY-MM-DD'`);
+    await connection.execute(`ALTER SESSION SET NLS_NUMERIC_CHARACTERS = '.,'`);
+
+    let sql = `WITH Vendas AS (
+      SELECT
+        PCNFSAID.CODUSUR AS CODUSUR,
+        SUM(
+          ROUND(
+            DECODE(PCMOV.CODOPER,
+              'S', NVL(DECODE(PCNFSAID.CONDVENDA, 7, PCMOV.QTCONT, PCMOV.QT), 0),
+              'ST', NVL(DECODE(PCNFSAID.CONDVENDA, 7, PCMOV.QTCONT, PCMOV.QT), 0),
+              'SM', NVL(DECODE(PCNFSAID.CONDVENDA, 7, PCMOV.QTCONT, PCMOV.QT), 0),
+              'SB', NVL(DECODE(PCNFSAID.CONDVENDA, 7, PCMOV.QTCONT, PCMOV.QT), 0),
+              0
+            ) *
+            NVL(
+              DECODE(PCNFSAID.CONDVENDA,
+                7, NVL(PCMOV.PUNITCONT, 0),
+                NVL(PCMOV.PUNIT, 0) + NVL(PCMOV.VLFRETE, 0) + NVL(PCMOV.VLOUTRASDESP, 0) + NVL(PCMOV.VLFRETE_RATEIO, 0)
+              ),
+              0
+            )
+          , 2)
+          + ROUND(
+            NVL(PCMOV.QT, 0) * DECODE(PCNFSAID.CONDVENDA, 5, 0, 6, 0, 11, 0, 12, 0,
+              DECODE(PCMOV.CODOPER, 'SB', 0, NVL(PCMOV.VLIPI, 0))
+            )
+          , 2)
+          + ROUND(
+            NVL(PCMOV.QT, 0) * DECODE(PCNFSAID.CONDVENDA, 5, 0, 6, 0, 11, 0, 12, 0,
+              DECODE(PCMOV.CODOPER, 'SB', 0, (NVL(PCMOV.ST, 0) + NVL(PCMOVCOMPLE.VLSTTRANSFCD, 0)))
+            )
+          , 2)
+        ) AS VLVENDA
+      FROM PCNFSAID
+      JOIN PCMOV ON PCMOV.NUMTRANSVENDA = PCNFSAID.NUMTRANSVENDA AND PCMOV.CODFILIAL = PCNFSAID.CODFILIAL
+      JOIN PCPRODUT ON PCMOV.CODPROD = PCPRODUT.CODPROD
+      LEFT JOIN PCMOVCOMPLE ON PCMOV.NUMTRANSITEM = PCMOVCOMPLE.NUMTRANSITEM
+      WHERE PCMOV.DTMOV BETWEEN TO_DATE(:DATAI, 'DD/MM/YYYY') AND TO_DATE(:DATAF, 'DD/MM/YYYY')
+        AND PCNFSAID.DTSAIDA BETWEEN TO_DATE(:DATAI, 'DD/MM/YYYY') AND TO_DATE(:DATAF, 'DD/MM/YYYY')
+        AND NVL(PCNFSAID.TIPOVENDA,'X') NOT IN ('SR','DF')
+        AND PCMOV.CODOPER <> 'SR'
+        AND PCMOV.CODOPER <> 'SO'
+        AND PCNFSAID.CODFISCAL NOT IN (522, 622, 722, 532, 632, 732)
+        AND PCNFSAID.CONDVENDA NOT IN (4, 8, 10, 13, 20, 98, 99)
+        AND PCNFSAID.DTCANCEL IS NULL
+        AND PCNFSAID.CODFILIAL = :CODFILIAL
+        AND PCNFSAID.CODUSUR = :CODUSUR`;
+
+    // Filtro de departamento na Vendas (adicionado dentro do WHERE)
+    if (codDepartamento) {
+      if (Array.isArray(codDepartamento)) {
+        sql += ` AND (`;
+        codDepartamento.forEach((dpto, index) => {
+          if (index > 0) sql += ` OR `;
+          sql += `PCPRODUT.CODEPTO = ${dpto}`;
+        });
+        sql += `)`;
+      } else {
+        sql += ` AND PCPRODUT.CODEPTO = ${codDepartamento}`;
+      }
+    }
+    // Filtro de seção na Vendas (adicionado dentro do WHERE)
+    if (codSecao) {
+      if (Array.isArray(codSecao)) {
+        sql += ` AND (`;
+        codSecao.forEach((sec, index) => {
+          if (index > 0) sql += ` OR `;
+          sql += `PCPRODUT.CODSEC = ${sec}`;
+        });
+        sql += `)`;
+      } else {
+        sql += ` AND PCPRODUT.CODSEC = ${codSecao}`;
+      }
+    }
+
+    // Finalizar Vendas com GROUP BY após inserir filtros
+    sql += `
+      GROUP BY PCNFSAID.CODUSUR
+      ),
+      Devolucoes AS (
+        SELECT PCNFENT.CODUSURDEVOL AS CODUSUR,
+               SUM(DECODE(PCNFENT.VLTOTAL,0,PCESTCOM.VLDEVOLUCAO,PCNFENT.VLTOTAL) - NVL(PCNFENT.VLOUTRAS,0) - NVL(PCNFENT.VLFRETE,0)) AS VLDEVOLUCAO
+          FROM PCNFENT
+               LEFT JOIN PCESTCOM ON PCNFENT.NUMTRANSENT = PCESTCOM.NUMTRANSENT
+               LEFT JOIN PCTABDEV ON PCNFENT.CODDEVOL = PCTABDEV.CODDEVOL
+               LEFT JOIN PCCLIENT ON PCNFENT.CODFORNEC = PCCLIENT.CODCLI
+               LEFT JOIN PCEMPR ON PCNFENT.CODMOTORISTADEVOL = PCEMPR.MATRICULA
+               LEFT JOIN PCUSUARI ON PCNFENT.CODUSURDEVOL = PCUSUARI.CODUSUR
+               LEFT JOIN PCSUPERV ON PCUSUARI.CODSUPERVISOR = PCSUPERV.CODSUPERVISOR
+               LEFT JOIN PCEMPR FUNC ON PCNFENT.CODFUNCLANC = FUNC.MATRICULA
+               LEFT JOIN PCNFSAID ON PCESTCOM.NUMTRANSVENDA = PCNFSAID.NUMTRANSVENDA
+               LEFT JOIN PCDEVCONSUM ON PCNFENT.NUMTRANSENT = PCDEVCONSUM.NUMTRANSENT
+         WHERE NVL(PCNFENT.CODFILIALNF, PCNFENT.CODFILIAL) = :CODFILIAL
+           AND PCNFENT.DTENT BETWEEN TO_DATE(:DATAI, 'DD/MM/YYYY') AND TO_DATE(:DATAF, 'DD/MM/YYYY')
+           AND PCNFENT.TIPODESCARGA IN ('6','7','T') 
+           AND NVL(PCNFENT.OBS, 'X') <> 'NF CANCELADA'
+           AND PCNFENT.CODFISCAL IN ('131','132','231','232','199','299')
+           AND EXISTS (
+               SELECT 1 FROM PCPRODUT, PCMOV, PCDEPTO, PCSECAO
+                WHERE PCMOV.CODPROD = PCPRODUT.CODPROD
+                  AND PCPRODUT.CODEPTO = PCDEPTO.CODEPTO
+                  AND PCPRODUT.CODSEC = PCSECAO.CODSEC
+                  AND PCMOV.NUMTRANSENT = PCNFENT.NUMTRANSENT
+                  AND PCMOV.NUMNOTA = PCNFENT.NUMNOTA
+                  AND PCMOV.DTCANCEL IS NULL
+                  AND NVL(PCNFENT.CODFILIALNF, PCNFENT.CODFILIAL) = :CODFILIAL
+                  AND PCNFENT.CODDEVOL = 31
+                  AND PCMOV.CODFILIAL = PCNFENT.CODFILIAL`;
+
+    // Filtro de departamento na Devolucoes (EXISTS)
+    if (codDepartamento) {
+      if (Array.isArray(codDepartamento)) {
+        sql += ` AND (`;
+        codDepartamento.forEach((dpto, index) => {
+          if (index > 0) sql += ` OR `;
+          sql += `PCDEPTO.CODEPTO = ${dpto}`;
+        });
+        sql += `)`;
+      } else {
+        sql += ` AND PCDEPTO.CODEPTO = ${codDepartamento}`;
+      }
+    }
+    // Filtro de seção na Devolucoes (EXISTS)
+    if (codSecao) {
+      if (Array.isArray(codSecao)) {
+        sql += ` AND (`;
+        codSecao.forEach((sec, index) => {
+          if (index > 0) sql += ` OR `;
+          sql += `PCSECAO.CODSEC = ${sec}`;
+        });
+        sql += `)`;
+      } else {
+        sql += ` AND PCSECAO.CODSEC = ${codSecao}`;
+      }
+    }
+
+    sql += `
+               )
+           AND NVL(PCNFSAID.CONDVENDA, 0) NOT IN (4, 8, 10, 13, 20, 98, 99)
+           AND PCNFENT.CODUSURDEVOL = :CODUSUR
+           AND PCNFENT.CODDEVOL = 31
+         GROUP BY PCNFENT.CODUSURDEVOL
+      )
+      SELECT
+        NVL((SELECT VLVENDA FROM Vendas), 0) AS VLVENDA,
+        NVL((SELECT VLDEVOLUCAO FROM Devolucoes), 0) AS VLDEVOLUCAO
+      FROM DUAL`;
+
+    const params = {
+      DATAI: dataInicialOracle,
+      DATAF: dataFinalOracle,
+      CODFILIAL: codFilial,
+      CODUSUR: codUsur
+    };
+
+    const result = await connection.execute(sql, params);
+    const row = (result.rows && result.rows[0]) ? result.rows[0] : { VLVENDA: 0, VLDEVOLUCAO: 0 };
+
+    return {
+      vlvenda: toNumberSafe(row.VLVENDA),
+      vldevolucao: toNumberSafe(row.VLDEVOLUCAO)
+    };
+  } catch (error) {
+    writeLog(`Erro ao obter totais mensais Oracle: ${error.message}`);
+    console.error(`Erro na consulta de totais mensais: ${error.message}`);
+    throw error;
+  }
+}
+
 // Função para verificar se existe venda diária para uma data e vendedor específicos
 async function verificarVendaDiaria(token, data, codusur) {
   try {
@@ -431,15 +1154,30 @@ async function verificarVendaTotal(token, dataInicio, dataFim, codusur) {
       if (response.data.vendas_totais && response.data.vendas_totais.length > 0) {
         // Encontrar o registro para o período específico
         const vendaTotal = response.data.vendas_totais.find(venda => {
-          // Converter as datas do formato DD/MM/YYYY para YYYY-MM-DD para comparação
-          const partesDataInicio = venda.dataInicio.split('/');
-          const partesDataFim = venda.dataFim.split('/');
-          const dataInicioFormatada = `${partesDataInicio[2]}-${partesDataInicio[1]}-${partesDataInicio[0]}`;
-          const dataFimFormatada = `${partesDataFim[2]}-${partesDataFim[1]}-${partesDataFim[0]}`;
-          
-          return dataInicioFormatada === dataInicio && 
-                 dataFimFormatada === dataFim && 
-                 venda.codUsuario === codusur;
+          // Aceitar tanto 'data_inicio'/'data_fim' quanto 'dataInicio'/'dataFim'
+          const diRaw = venda.data_inicio || venda.dataInicio;
+          const dfRaw = venda.data_fim || venda.dataFim;
+          const codRaw = venda.codusur || venda.codUsuario;
+
+          const normalizaData = (d) => {
+            if (!d) return null;
+            if (typeof d !== 'string') d = String(d);
+            const s = d.trim();
+            // DD/MM/YYYY -> YYYY-MM-DD
+            if (s.includes('/')) {
+              const [dd, mm, yyyy] = s.split('/');
+              return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+            }
+            // Já em YYYY-MM-DD ou com time, manter cabeçalho
+            if (s.includes('-')) {
+              return s.slice(0, 10);
+            }
+            return null;
+          };
+
+          const di = normalizaData(diRaw);
+          const df = normalizaData(dfRaw);
+          return di === dataInicio && df === dataFim && String(codRaw) === String(codusur);
         });
         
         if (vendaTotal) {
@@ -871,13 +1609,101 @@ async function syncVendas() {
         
         // Verificar se a conexão está ativa antes de executar a consulta
         oracleConnection = await verificarConexaoOracle(oracleConnection);
+
+        // Normalizar código de filial (evitar divergência com zeros à esquerda)
+        const codFilialNorm = normalizeCodigoFilial(vendedor.filial.codigo);
+
+        // Consolidar mês anterior para todos vendedores (independente de diárias do mês atual)
+        try {
+          const prevDataInicial = dataAtual.clone().subtract(1, 'month').startOf('month').format('YYYY-MM-DD');
+          const prevDataFim = dataAtual.clone().subtract(1, 'month').endOf('month').format('YYYY-MM-DD');
+
+          const oracleTotaisPrev = await getVendasTotaisOracle(
+            oracleConnection,
+            prevDataInicial,
+            prevDataFim,
+            codFilialNorm,
+            vendedor.rca,
+            filtros.departamentos,
+            filtros.secoes
+          );
+
+          // Agregar métricas a partir das diárias do mês anterior
+          let totaisPrevBase;
+          try {
+            const vendasDiariasPrev = await getVendasDiarias(
+              oracleConnection,
+              prevDataInicial,
+              prevDataFim,
+              codFilialNorm,
+              vendedor.rca,
+              filtros.departamentos,
+              filtros.secoes
+            );
+
+            totaisPrevBase = calcularTotais(vendasDiariasPrev) || {
+              total_qtd_pedidos: 0,
+              total_media_itens: 0,
+              total_ticket_medio: 0,
+              total_vlcustofin: 0,
+              total_qtcliente: 0,
+              total_via: 0,
+              total_vlvendadodia: 0,
+              total_vldevolucao: 0,
+              total_valor: 0
+            };
+          } catch (ePrevDiarias) {
+            writeLog(`Falha ao obter diárias do mês anterior para agregação: ${ePrevDiarias.message}`);
+            totaisPrevBase = {
+              total_qtd_pedidos: 0,
+              total_media_itens: 0,
+              total_ticket_medio: 0,
+              total_vlcustofin: 0,
+              total_qtcliente: 0,
+              total_via: 0,
+              total_vlvendadodia: 0,
+              total_vldevolucao: 0,
+              total_valor: 0
+            };
+          }
+
+          // Sobrepor vendas/devoluções com os totais mensais do Oracle
+          totaisPrevBase.total_vlvendadodia = toNumberSafe(oracleTotaisPrev.vlvenda);
+          totaisPrevBase.total_vldevolucao = toNumberSafe(oracleTotaisPrev.vldevolucao);
+          totaisPrevBase.total_valor = toNumberSafe(totaisPrevBase.total_vlvendadodia - totaisPrevBase.total_vldevolucao);
+
+          const vendaTotalPrev = {
+            codusur: vendedor.rca,
+            nome: vendedor.nome,
+            data_inicio: prevDataInicial,
+            data_fim: prevDataFim,
+            ...totaisPrevBase
+          };
+
+          const resultadoTotalPrev = await cadastrarVendaTotal(token, vendaTotalPrev);
+          if (resultadoTotalPrev.success) {
+            if (resultadoTotalPrev.updated) {
+              totalVendasTotaisAtualizadas++;
+              writeLog(`Venda total (mês anterior) atualizada para vendedor ${vendedor.nome} (RCA: ${vendedor.rca}). Período: ${prevDataInicial} a ${prevDataFim}`);
+            } else {
+              totalVendasTotaisCadastradas++;
+              writeLog(`Venda total (mês anterior) cadastrada para vendedor ${vendedor.nome} (RCA: ${vendedor.rca}). Período: ${prevDataInicial} a ${prevDataFim}`);
+            }
+          } else if (resultadoTotalPrev.message === 'Registro já existe') {
+            totalVendasTotaisJaExistentes++;
+            writeLog(`Venda total (mês anterior) já existe para vendedor ${vendedor.nome} (RCA: ${vendedor.rca}). Período: ${prevDataInicial} a ${prevDataFim}`);
+          }
+        } catch (prevError) {
+          writeLog(`Erro ao consolidar mês anterior para vendedor ${vendedor.nome} (RCA: ${vendedor.rca}): ${prevError.message}`);
+          console.error(`Erro ao consolidar mês anterior para vendedor ${vendedor.nome}: ${prevError.message}`);
+        }
         
         // Obter vendas diárias do Oracle
         const vendasDiarias = await getVendasDiarias(
           oracleConnection,
           dataInicial,
           dataFinal,
-          vendedor.filial.codigo,
+          codFilialNorm,
           vendedor.rca,
           filtros.departamentos,
           filtros.secoes
@@ -886,7 +1712,6 @@ async function syncVendas() {
         if (!vendasDiarias || vendasDiarias.length === 0) {
           writeLog(`Nenhuma venda encontrada para o vendedor ${vendedor.nome} (RCA: ${vendedor.rca}).`);
           console.log(`Nenhuma venda encontrada para o vendedor ${vendedor.nome}`);
-          continue;
         }
         
         totalVendasDiarias += vendasDiarias.length;
@@ -925,16 +1750,48 @@ async function syncVendas() {
         console.log(`Vendas diárias: cadastradas=${vendasCadastradas}, atualizadas=${vendasAtualizadas}, já existentes=${vendasJaExistentes}`);
         writeLog(`Vendedor ${vendedor.nome}: vendas diárias cadastradas=${vendasCadastradas}, atualizadas=${vendasAtualizadas}, já existentes=${vendasJaExistentes}`);
         
-        // Calcular totais e cadastrar venda total
-        if (vendasDiarias.length > 0) {
-          const totais = calcularTotais(vendasDiarias);
+        // Calcular totais e cadastrar venda total (sempre, mesmo sem diárias)
+        {
+          const totaisBase = calcularTotais(vendasDiarias) || {
+            total_qtd_pedidos: 0,
+            total_media_itens: 0,
+            total_ticket_medio: 0,
+            total_vlcustofin: 0,
+            total_qtcliente: 0,
+            total_via: 0,
+            total_vlvendadodia: 0,
+            total_vldevolucao: 0,
+            total_valor: 0
+          };
+
+          // Ajustar totais com cálculo mensal direto do Oracle (VLVENDA/VLDEVOLUCAO)
+          try {
+            const oracleTotaisAtual = await getVendasTotaisOracle(
+              oracleConnection,
+              dataInicial,
+              dataFinal,
+              codFilialNorm,
+              vendedor.rca,
+              filtros.departamentos,
+              filtros.secoes
+            );
+
+            totaisBase.total_vlvendadodia = toNumberSafe(oracleTotaisAtual.vlvenda);
+            totaisBase.total_vldevolucao = toNumberSafe(oracleTotaisAtual.vldevolucao);
+            totaisBase.total_valor = toNumberSafe(totaisBase.total_vlvendadodia - totaisBase.total_vldevolucao);
+
+            writeLog(`Totais Oracle aplicados (atual): VLVENDA=${totaisBase.total_vlvendadodia} VLDEVOLUCAO=${totaisBase.total_vldevolucao}`);
+          } catch (oracleTotaisError) {
+            writeLog(`Falha ao obter totais Oracle do período atual: ${oracleTotaisError.message}`);
+            console.error(`Falha ao obter totais Oracle do período atual: ${oracleTotaisError.message}`);
+          }
           
           const vendaTotal = {
             codusur: vendedor.rca,
             nome: vendedor.nome,
             data_inicio: dataInicial,
             data_fim: dataFinal,
-            ...totais
+            ...totaisBase
           };
           
           try {
@@ -1013,6 +1870,147 @@ async function syncVendas() {
     const duracao = (endTime - startTime) / 1000;
     writeLog(`Sincronização finalizada. Duração: ${duracao}s.`);
     console.log(`Sincronização finalizada. Duração: ${duracao}s.`);
+  }
+}
+
+// Sincroniza exclusivamente os totais do mês anterior para todos os vendedores,
+// espelhando o comportamento de consolidação usado nos totais da Bijou por filial.
+async function syncVendasMesAnterior() {
+  let oracleConnection;
+  const startTime = new Date();
+
+  console.log('Sincronização de vendas (mês anterior) iniciada.');
+
+  try {
+    const token = await getAuthToken();
+    console.log('Token obtido com sucesso');
+    // Permite filtrar por vendedores específicos via CLI: --prev-only-codusur=108,16
+    const codusurArg = process.argv.find(a => a.startsWith('--prev-only-codusur='));
+    const filterRCAs = codusurArg ? codusurArg.split('=')[1].split(',').map(s => s.trim()).filter(Boolean) : null;
+
+    let vendedores = [];
+    if (filterRCAs && filterRCAs.length > 0) {
+      vendedores = await getVendedoresPorRCAs(token, filterRCAs);
+      console.log(`Obtidos ${vendedores.length} vendedores por filtro RCA: ${filterRCAs.join(',')}`);
+    } else {
+      vendedores = await getVendedores(token);
+      console.log(`Obtidos ${vendedores.length} vendedores.`);
+    }
+
+    const dataAtual = moment();
+    const prevDataInicial = dataAtual.clone().subtract(1, 'month').startOf('month').format('YYYY-MM-DD');
+    const prevDataFim = dataAtual.clone().subtract(1, 'month').endOf('month').format('YYYY-MM-DD');
+    console.log(`Período anterior: ${prevDataInicial} a ${prevDataFim}`);
+
+    try {
+      oracleConnection = await criarConexaoOracle();
+    } catch (dbError) {
+      console.error(`Erro ao conectar ao Oracle: ${dbError.message}`);
+      throw dbError;
+    }
+
+    let totalVendedores = 0;
+    let totCadastradas = 0;
+    let totAtualizadas = 0;
+    let totJaExistentes = 0;
+
+    for (const vendedor of vendedores) {
+      if (!vendedor.rca || !vendedor.filial || !vendedor.filial.codigo) {
+        console.log(`Pulando vendedor ${vendedor.nome}: RCA ou filial não configurada`);
+        continue;
+      }
+
+      totalVendedores++;
+      console.log(`Processando vendedor (mês anterior): ${vendedor.nome}, RCA: ${vendedor.rca}, Filial: ${vendedor.filial.codigo}`);
+
+      try {
+        const filtros = await getVendedorFiltros(token, vendedor.id);
+        oracleConnection = await verificarConexaoOracle(oracleConnection);
+        const codFilialNorm = normalizeCodigoFilial(vendedor.filial.codigo);
+
+        const oracleTotaisPrev = await getVendasTotaisOracle(
+          oracleConnection,
+          prevDataInicial,
+          prevDataFim,
+          codFilialNorm,
+          vendedor.rca,
+          filtros.departamentos,
+          filtros.secoes
+        );
+
+        let totaisPrevBase;
+        try {
+          const vendasDiariasPrev = await getVendasDiarias(
+            oracleConnection,
+            prevDataInicial,
+            prevDataFim,
+            codFilialNorm,
+            vendedor.rca,
+            filtros.departamentos,
+            filtros.secoes
+          );
+          totaisPrevBase = calcularTotais(vendasDiariasPrev) || {
+            total_qtd_pedidos: 0,
+            total_media_itens: 0,
+            total_ticket_medio: 0,
+            total_vlcustofin: 0,
+            total_qtcliente: 0,
+            total_via: 0,
+            total_vlvendadodia: 0,
+            total_vldevolucao: 0,
+            total_valor: 0
+          };
+        } catch (ePrevDiarias) {
+          console.log(`Falha ao obter diárias do mês anterior para agregação: ${ePrevDiarias.message}`);
+          totaisPrevBase = {
+            total_qtd_pedidos: 0,
+            total_media_itens: 0,
+            total_ticket_medio: 0,
+            total_vlcustofin: 0,
+            total_qtcliente: 0,
+            total_via: 0,
+            total_vlvendadodia: 0,
+            total_vldevolucao: 0,
+            total_valor: 0
+          };
+        }
+
+        totaisPrevBase.total_vlvendadodia = toNumberSafe(oracleTotaisPrev.vlvenda);
+        totaisPrevBase.total_vldevolucao = toNumberSafe(oracleTotaisPrev.vldevolucao);
+        totaisPrevBase.total_valor = toNumberSafe(totaisPrevBase.total_vlvendadodia - totaisPrevBase.total_vldevolucao);
+
+        const vendaTotalPrev = {
+          codusur: vendedor.rca,
+          nome: vendedor.nome,
+          data_inicio: prevDataInicial,
+          data_fim: prevDataFim,
+          ...totaisPrevBase
+        };
+
+        const resultadoTotalPrev = await cadastrarVendaTotal(token, vendaTotalPrev);
+        if (resultadoTotalPrev.success) {
+          if (resultadoTotalPrev.updated) {
+            totAtualizadas++;
+            console.log(`Venda total (mês anterior) atualizada: RCA ${vendedor.rca}, período ${prevDataInicial} a ${prevDataFim}`);
+          } else {
+            totCadastradas++;
+            console.log(`Venda total (mês anterior) cadastrada: RCA ${vendedor.rca}, período ${prevDataInicial} a ${prevDataFim}`);
+          }
+        } else if (resultadoTotalPrev.message === 'Registro já existe') {
+          totJaExistentes++;
+          console.log(`Venda total (mês anterior) já existente: RCA ${vendedor.rca}, período ${prevDataInicial} a ${prevDataFim}`);
+        }
+      } catch (prevError) {
+        console.error(`Erro ao consolidar mês anterior para vendedor ${vendedor.nome} (RCA: ${vendedor.rca}): ${prevError.message}`);
+      }
+    }
+
+    try { await oracleConnection.close(); } catch {}
+
+    const endTime = new Date();
+    console.log(`Sincronização do mês anterior finalizada. Vendedores: ${totalVendedores}, cadastradas=${totCadastradas}, atualizadas=${totAtualizadas}, existentes=${totJaExistentes}. Duração: ${((endTime - startTime)/1000).toFixed(3)}s.`);
+  } catch (error) {
+    console.error(`Erro na sincronização do mês anterior: ${error.message}`);
   }
 }
 
@@ -1405,21 +2403,598 @@ async function syncDepartamentosSecoes() {
   }
 }
 
+// Orquestrador: sincroniza vendas e Bijou (filial - departamentos e seções)
+async function syncVendasComBijouFilial() {
+  console.log('[orchestrator] Iniciando sync de Vendedor + Bijou (filial deptos/seções)');
+  try {
+    await syncVendas();
+  } catch (e) {
+    console.error('[orchestrator] Falha em syncVendas:', e && e.message ? e.message : e);
+  }
+
+  try {
+    await syncBijouFilial();
+  } catch (e) {
+    console.error('[orchestrator] Falha em syncBijouFilial:', e && e.message ? e.message : e);
+  }
+
+  try {
+    await syncBijouFilialSecoes();
+  } catch (e) {
+    console.error('[orchestrator] Falha em syncBijouFilialSecoes:', e && e.message ? e.message : e);
+  }
+
+  try {
+    await syncBijouVendedorSecoes();
+  } catch (e) {
+    console.error('[orchestrator] Falha em syncBijouVendedorSecoes:', e && e.message ? e.message : e);
+  }
+
+  console.log('[orchestrator] Concluído sync de Vendedor + Bijou (filial deptos/seções)');
+}
+
 // Agendar sincronização a cada 5 minutos
-schedule.scheduleJob('*/5 * * * *', () => {
-  console.log(`Sincronização de vendas iniciada em: ${new Date().toLocaleString()}`);
-  syncVendas();
-});
+// Modo de teste: executar apenas Bijou para uma filial passada via CLI
+const bijouTestArg = process.argv.find(a => a.startsWith('--bijou-filial='));
+const isBijouTest = Boolean(bijouTestArg);
+const prevOnlyArg = process.argv.includes('--prev-only');
 
-// Agendar sincronização de departamentos e seções diariamente às 01:00
-schedule.scheduleJob('0 1 * * *', () => {
-  console.log(`Sincronização de departamentos e seções iniciada em: ${new Date().toLocaleString()}`);
-  syncDepartamentosSecoes();
-});
+if (!isBijouTest) {
+  if (!prevOnlyArg) {
+    schedule.scheduleJob('*/5 * * * *', () => {
+      console.log(`Orquestrador: vendas + Bijou filial + vendedor seções iniciado em: ${new Date().toLocaleString()}`);
+      syncVendasComBijouFilial();
+    });
 
-// Executar sincronização imediatamente ao iniciar
-syncVendas();
-syncDepartamentosSecoes();
+    // Agendar sincronização de departamentos e seções diariamente às 01:00
+    schedule.scheduleJob('0 1 * * *', () => {
+      console.log(`Sincronização de departamentos e seções iniciada em: ${new Date().toLocaleString()}`);
+      syncDepartamentosSecoes();
+    });
 
-console.log('Sincronização de vendas agendada a cada 5 minutos.');
-console.log('Sincronização de departamentos e seções agendada diariamente às 01:00.'); 
+    // Agendar sincronização de Bijou/Make/Bolsas por Filial diariamente às 02:15
+    schedule.scheduleJob('15 2 * * *', () => {
+      console.log(`Sincronização de Bijou/Make/Bolsas por Filial iniciada em: ${new Date().toLocaleString()}`);
+      syncBijouFilial();
+    });
+
+    // Agendar sincronização de Bijou Seções por Filial diariamente às 02:20
+    schedule.scheduleJob('20 2 * * *', () => {
+      console.log(`Sincronização de Bijou Seções por Filial iniciada em: ${new Date().toLocaleString()}`);
+      syncBijouFilialSecoes();
+    });
+
+    // Agendar sincronização de Bijou Seções por Vendedor diariamente às 02:25
+    schedule.scheduleJob('25 2 * * *', () => {
+      console.log(`Sincronização de Bijou Seções por Vendedor iniciada em: ${new Date().toLocaleString()}`);
+      syncBijouVendedorSecoes();
+    });
+
+    // Executar sincronização imediatamente ao iniciar
+    syncVendasComBijouFilial();
+    syncDepartamentosSecoes();
+
+    console.log('Sincronização de vendas agendada a cada 5 minutos.');
+    console.log('Sincronização de departamentos e seções agendada diariamente às 01:00.');
+    console.log('Sincronização de Bijou/Make/Bolsas por Filial agendada diariamente às 02:15.');
+    console.log('Sincronização de Bijou Seções por Filial agendada diariamente às 02:20.');
+    console.log('Sincronização de Bijou Seções por Vendedor agendada diariamente às 02:25.');
+  } else {
+    // Executa exclusivamente a consolidação do mês anterior
+    syncVendasMesAnterior();
+  }
+} else {
+  const filialCodigo = bijouTestArg.split('=')[1];
+  const bijouDiArg = process.argv.find(a => a.startsWith('--bijou-di='));
+  const bijouDfArg = process.argv.find(a => a.startsWith('--bijou-df='));
+  const dtIniOverride = bijouDiArg ? bijouDiArg.split('=')[1] : null;
+  const dtFimOverride = bijouDfArg ? bijouDfArg.split('=')[1] : null;
+  runBijouTest(filialCodigo, dtIniOverride, dtFimOverride);
+}
+
+// Garante a existência das tabelas necessárias para Bijou
+async function ensureBijouTablesExist(mysqlConnection) {
+  // bijou_filial_config
+  await mysqlConnection.query(`
+    CREATE TABLE IF NOT EXISTS bijou_filial_config (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      filial_id INT NOT NULL,
+      departamentos VARCHAR(255) DEFAULT NULL,
+      secoes VARCHAR(255) DEFAULT NULL,
+      ativo TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      CONSTRAINT fk_bijou_filial_config_filial FOREIGN KEY (filial_id) REFERENCES filiais(id) ON DELETE CASCADE,
+      UNIQUE KEY uniq_bijou_filial_config_filial (filial_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // bijou_filial_totais
+  await mysqlConnection.query(`
+    CREATE TABLE IF NOT EXISTS bijou_filial_totais (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      filial_id INT NOT NULL,
+      codfilial VARCHAR(20) NOT NULL,
+      mes INT NOT NULL,
+      ano INT NOT NULL,
+      data_inicio DATE NOT NULL,
+      data_fim DATE NOT NULL,
+      valor_total DECIMAL(14,2) NOT NULL DEFAULT 0,
+      config_key VARCHAR(100) NOT NULL,
+      departamentos VARCHAR(255) DEFAULT NULL,
+      secoes VARCHAR(255) DEFAULT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      CONSTRAINT fk_bijou_filial_totais_filial FOREIGN KEY (filial_id) REFERENCES filiais(id) ON DELETE CASCADE,
+      UNIQUE KEY uniq_bijou_filial_period (filial_id, mes, ano, config_key),
+      KEY idx_config_key (config_key)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // bijou_filial_secoes_config
+  await mysqlConnection.query(`
+    CREATE TABLE IF NOT EXISTS bijou_filial_secoes_config (
+      filial_id INT NOT NULL PRIMARY KEY,
+      departamentos VARCHAR(1000) DEFAULT NULL,
+      secoes VARCHAR(2000) DEFAULT NULL,
+      ativo TINYINT(1) NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      CONSTRAINT fk_bijou_filial_secoes_config_filial FOREIGN KEY (filial_id) REFERENCES filiais(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // bijou_filial_secoes_totais
+  await mysqlConnection.query(`
+    CREATE TABLE IF NOT EXISTS bijou_filial_secoes_totais (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      filial_id INT NOT NULL,
+      codfilial VARCHAR(20) NOT NULL,
+      mes INT NOT NULL,
+      ano INT NOT NULL,
+      data_inicio DATE NOT NULL,
+      data_fim DATE NOT NULL,
+      valor_total DECIMAL(14,2) NOT NULL DEFAULT 0,
+      config_key VARCHAR(100) NOT NULL,
+      departamentos VARCHAR(255) DEFAULT NULL,
+      secoes VARCHAR(255) DEFAULT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      CONSTRAINT fk_bijou_filial_secoes_totais_filial FOREIGN KEY (filial_id) REFERENCES filiais(id) ON DELETE CASCADE,
+      UNIQUE KEY uniq_bijou_filial_secoes_period (filial_id, mes, ano, config_key),
+      KEY idx_config_key_filial_secoes (config_key)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // bijou_vendedor_secoes_config
+  await mysqlConnection.query(`
+    CREATE TABLE IF NOT EXISTS bijou_vendedor_secoes_config (
+      vendedor_id INT NOT NULL PRIMARY KEY,
+      departamentos VARCHAR(1000) DEFAULT NULL,
+      secoes VARCHAR(2000) DEFAULT NULL,
+      ativo TINYINT(1) NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      CONSTRAINT fk_bijou_vendedor_secoes_config_vendedor FOREIGN KEY (vendedor_id) REFERENCES vendedores(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // bijou_vendedor_secoes_totais
+  await mysqlConnection.query(`
+    CREATE TABLE IF NOT EXISTS bijou_vendedor_secoes_totais (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      vendedor_id INT NOT NULL,
+      codusur VARCHAR(20) NOT NULL,
+      mes INT NOT NULL,
+      ano INT NOT NULL,
+      data_inicio DATE NOT NULL,
+      data_fim DATE NOT NULL,
+      valor_total DECIMAL(14,2) NOT NULL DEFAULT 0,
+      config_key VARCHAR(100) NOT NULL,
+      departamentos VARCHAR(255) DEFAULT NULL,
+      secoes VARCHAR(255) DEFAULT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      CONSTRAINT fk_bijou_vendedor_secoes_totais_vendedor FOREIGN KEY (vendedor_id) REFERENCES vendedores(id) ON DELETE CASCADE,
+      UNIQUE KEY uniq_bijou_vendedor_secoes_period (vendedor_id, mes, ano, config_key),
+      KEY idx_config_key_vendedor_secoes (config_key)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // Migração de colunas ausentes
+  await ensureBijouTablesSchema(mysqlConnection);
+}
+
+async function ensureBijouTablesSchema(mysqlConnection) {
+  // Helper para checar existência de coluna
+  const columnExists = async (table, column) => {
+    const [rows] = await mysqlConnection.query(
+      `SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+      [table, column]
+    );
+    return rows && rows[0] && Number(rows[0].cnt) > 0;
+  };
+
+  // bijou_filial_config: garantir filial_id, departamentos, secoes, ativo
+  if (!(await columnExists('bijou_filial_config', 'filial_id'))) {
+    await mysqlConnection.query(`ALTER TABLE bijou_filial_config ADD COLUMN filial_id INT NULL`);
+  }
+  if (!(await columnExists('bijou_filial_config', 'departamentos'))) {
+    await mysqlConnection.query(`ALTER TABLE bijou_filial_config ADD COLUMN departamentos VARCHAR(255) DEFAULT NULL`);
+  }
+  if (!(await columnExists('bijou_filial_config', 'secoes'))) {
+    await mysqlConnection.query(`ALTER TABLE bijou_filial_config ADD COLUMN secoes VARCHAR(255) DEFAULT NULL`);
+  }
+  if (!(await columnExists('bijou_filial_config', 'ativo'))) {
+    await mysqlConnection.query(`ALTER TABLE bijou_filial_config ADD COLUMN ativo TINYINT(1) NOT NULL DEFAULT 1`);
+  }
+
+  // bijou_filial_totais: garantir codfilial e config_key
+  if (!(await columnExists('bijou_filial_totais', 'codfilial'))) {
+    await mysqlConnection.query(`ALTER TABLE bijou_filial_totais ADD COLUMN codfilial VARCHAR(20) NOT NULL AFTER filial_id`);
+  }
+  if (!(await columnExists('bijou_filial_totais', 'config_key'))) {
+    await mysqlConnection.query(`ALTER TABLE bijou_filial_totais ADD COLUMN config_key VARCHAR(100) NOT NULL`);
+  }
+
+  // bijou_filial_secoes_totais: garantir codfilial e config_key
+  if (!(await columnExists('bijou_filial_secoes_totais', 'codfilial'))) {
+    await mysqlConnection.query(`ALTER TABLE bijou_filial_secoes_totais ADD COLUMN codfilial VARCHAR(20) NOT NULL AFTER filial_id`);
+  }
+  if (!(await columnExists('bijou_filial_secoes_totais', 'config_key'))) {
+    await mysqlConnection.query(`ALTER TABLE bijou_filial_secoes_totais ADD COLUMN config_key VARCHAR(100) NOT NULL`);
+  }
+
+  // bijou_vendedor_secoes_totais: garantir codusur e config_key
+  if (!(await columnExists('bijou_vendedor_secoes_totais', 'codusur'))) {
+    await mysqlConnection.query(`ALTER TABLE bijou_vendedor_secoes_totais ADD COLUMN codusur VARCHAR(20) NOT NULL AFTER vendedor_id`);
+  }
+  if (!(await columnExists('bijou_vendedor_secoes_totais', 'config_key'))) {
+    await mysqlConnection.query(`ALTER TABLE bijou_vendedor_secoes_totais ADD COLUMN config_key VARCHAR(100) NOT NULL`);
+  }
+
+  // Aumentar capacidade das colunas de CSV de filtros quando necessário
+  const ensureColumnLength = async (table, column, targetLength) => {
+    const [rows] = await mysqlConnection.query(
+      `SELECT CHARACTER_MAXIMUM_LENGTH AS len FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+      [table, column]
+    );
+    const len = rows && rows[0] && rows[0].len ? Number(rows[0].len) : null;
+    if (len && len < targetLength) {
+      await mysqlConnection.query(`ALTER TABLE ${table} MODIFY COLUMN ${column} VARCHAR(${targetLength}) DEFAULT NULL`);
+      console.log(`[Schema] ${table}.${column} alterado para VARCHAR(${targetLength})`);
+    }
+  };
+
+  await ensureColumnLength('bijou_vendedor_secoes_totais', 'departamentos', 1000);
+  await ensureColumnLength('bijou_vendedor_secoes_totais', 'secoes', 2000);
+  await ensureColumnLength('bijou_filial_secoes_totais', 'departamentos', 1000);
+  await ensureColumnLength('bijou_filial_secoes_totais', 'secoes', 2000);
+}
+
+// Listar configuração Bijou Seções por filial no MySQL
+async function listarBijouFilialSecoesConfigMySQL(mysqlConn) {
+  const [rows] = await mysqlConn.execute(`
+    SELECT c.filial_id, f.codigo, c.departamentos, c.secoes, c.ativo
+    FROM bijou_filial_secoes_config c
+    JOIN filiais f ON f.id = c.filial_id
+    WHERE c.ativo = 1
+  `);
+  return rows.map(r => ({
+    filial_id: r.filial_id,
+    codigo: normalizeCodigoFilial(r.codigo),
+    departamentosCSV: (r.departamentos || '').trim() || null,
+    secoesCSV: (r.secoes || '').trim() || null,
+  }));
+}
+
+// Upsert de totais Bijou Seções por Filial
+async function upsertTotaisBijouFilialSecoes(mysqlConn, totals, periodo, config) {
+  const { mes, ano, data_inicio, data_fim } = periodo;
+  const { departamentosCSV, secoesCSV } = config;
+  const configKey = `deptos=${departamentosCSV || ''}|secoes=${secoesCSV || ''}`;
+
+  const [filiaisRows] = await mysqlConn.execute('SELECT id, codigo FROM filiais');
+  const filialIdByCodigo = new Map(filiaisRows.map(r => [normalizeCodigoFilial(r.codigo), r.id]));
+
+  const insertSQL = `
+    INSERT INTO bijou_filial_secoes_totais
+      (filial_id, codfilial, mes, ano, data_inicio, data_fim, valor_total, config_key, departamentos, secoes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      valor_total = VALUES(valor_total),
+      data_inicio = VALUES(data_inicio),
+      data_fim = VALUES(data_fim),
+      updated_at = CURRENT_TIMESTAMP
+  `;
+
+  for (const t of totals) {
+    const codfilialNorm = normalizeCodigoFilial(t.codfilial);
+    const filial_id = filialIdByCodigo.get(codfilialNorm) || null;
+    if (!filial_id) {
+      console.warn(`[BijouFilialSecoes] Aviso: codfilial ${codfilialNorm} não encontrado em filiais. Pulando upsert.`);
+      continue;
+    }
+    await mysqlConn.execute(insertSQL, [
+      filial_id,
+      codfilialNorm,
+      mes,
+      ano,
+      moment(data_inicio).format('YYYY-MM-DD'),
+      moment(data_fim).format('YYYY-MM-DD'),
+      toNumberSafe(t.valor_total),
+      configKey,
+      departamentosCSV || null,
+      secoesCSV || null
+    ]);
+  }
+}
+
+// Sincronização Bijou Seções por Filial (usa mesma consulta com filtros de seções)
+async function syncBijouFilialSecoes() {
+  console.log('[BijouFilialSecoes] Iniciando sincronização de Bijou por seções (Filial)');
+  let oracleConnection;
+  let mysqlConnection;
+  try {
+    oracleConnection = await oracledb.getConnection({
+      user: process.env.LCDBUSER,
+      password: process.env.LCDBPASS,
+      connectString: `${process.env.LCDBHOST}/${process.env.LCDBNAME}`
+    });
+    mysqlConnection = await criarConexaoMySQL();
+    await ensureBijouTablesExist(mysqlConnection);
+
+    const configs = await listarBijouFilialSecoesConfigMySQL(mysqlConnection);
+    if (!configs || configs.length === 0) {
+      console.log('[BijouFilialSecoes] Nenhuma configuração ativa encontrada. Encerrando.');
+      return;
+    }
+
+    // Agrupar por combinação de filtros (departamentos/seções), como em Bijou por Filial
+    const groups = new Map();
+    for (const cfg of configs) {
+      const key = `deptos=${cfg.departamentosCSV || ''}|secoes=${cfg.secoesCSV || ''}`;
+      if (!groups.has(key)) {
+        groups.set(key, { departamentosCSV: cfg.departamentosCSV, secoesCSV: cfg.secoesCSV, filiais: [] });
+      }
+      if (cfg.codigo) {
+        groups.get(key).filiais.push(String(cfg.codigo));
+      }
+    }
+
+    const now = new Date();
+    const mesAtual = now.getMonth() + 1;
+    const anoAtual = now.getFullYear();
+    const { first: dtIniAtual, last: dtFimAtual } = firstAndLastDayOfMonth(anoAtual, mesAtual);
+
+    const mesAnteriorDate = new Date(anoAtual, mesAtual - 2, 1);
+    const mesAnterior = mesAnteriorDate.getMonth() + 1;
+    const anoAnterior = mesAnteriorDate.getFullYear();
+    const { first: dtIniAnt, last: dtFimAnt } = firstAndLastDayOfMonth(anoAnterior, mesAnterior);
+
+    // Mês atual e anterior por grupo
+    for (const group of groups.values()) {
+      const filiaisList = Array.from(new Set(group.filiais.map(String))).filter(Boolean);
+      if (filiaisList.length === 0) {
+        console.warn('[BijouFilialSecoes] Grupo sem filiais, ignorando:', {
+          departamentos: group.departamentosCSV,
+          secoes: group.secoesCSV
+        });
+        continue;
+      }
+      const filiaisCSV = csvFromArray(filiaisList);
+
+      // Mês atual
+      const totalsAtual = await consultarTotaisBijouPorFilial(oracleConnection, {
+        dtIni: dtIniAtual,
+        dtFim: dtFimAtual,
+        filiaisCSV,
+        deptosCSV: group.departamentosCSV,
+        secoesCSV: group.secoesCSV
+      });
+      await upsertTotaisBijouFilialSecoes(mysqlConnection, totalsAtual, {
+        mes: mesAtual,
+        ano: anoAtual,
+        data_inicio: dtIniAtual,
+        data_fim: dtFimAtual
+      }, { departamentosCSV: group.departamentosCSV, secoesCSV: group.secoesCSV });
+
+      // Mês anterior
+      const totalsAnterior = await consultarTotaisBijouPorFilial(oracleConnection, {
+        dtIni: dtIniAnt,
+        dtFim: dtFimAnt,
+        filiaisCSV,
+        deptosCSV: group.departamentosCSV,
+        secoesCSV: group.secoesCSV
+      });
+      await upsertTotaisBijouFilialSecoes(mysqlConnection, totalsAnterior, {
+        mes: mesAnterior,
+        ano: anoAnterior,
+        data_inicio: dtIniAnt,
+        data_fim: dtFimAnt
+      }, { departamentosCSV: group.departamentosCSV, secoesCSV: group.secoesCSV });
+    }
+
+    console.log('[BijouFilialSecoes] Concluída sincronização de mês atual e anterior.');
+  } catch (e) {
+    console.error('[BijouFilialSecoes] Erro na sincronização:', e && e.message ? e.message : e);
+  } finally {
+    try { if (oracleConnection) await oracleConnection.close(); } catch {}
+    try { if (mysqlConnection) await mysqlConnection.end(); } catch {}
+  }
+}
+
+// Upsert de totais Bijou Seções por Vendedor
+async function upsertTotaisBijouVendedorSecoes(mysqlConn, totals, periodo, vendedor) {
+  const { mes, ano, data_inicio, data_fim } = periodo;
+  const { vendedor_id, codusur, departamentosCSV, secoesCSV } = vendedor;
+  const configKey = `deptos=${departamentosCSV || ''}|secoes=${secoesCSV || ''}`;
+
+  const insertSQL = `
+    INSERT INTO bijou_vendedor_secoes_totais
+      (vendedor_id, codusur, mes, ano, data_inicio, data_fim, valor_total, config_key, departamentos, secoes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      valor_total = VALUES(valor_total),
+      data_inicio = VALUES(data_inicio),
+      data_fim = VALUES(data_fim),
+      updated_at = CURRENT_TIMESTAMP
+  `;
+
+  for (const t of totals) {
+    await mysqlConn.execute(insertSQL, [
+      vendedor_id,
+      codusur,
+      mes,
+      ano,
+      moment(data_inicio).format('YYYY-MM-DD'),
+      moment(data_fim).format('YYYY-MM-DD'),
+      toNumberSafe(t.valor_total),
+      configKey,
+      departamentosCSV || null,
+      secoesCSV || null
+    ]);
+  }
+}
+
+// Listar configuração Bijou Seções por vendedor
+async function listarBijouVendedorSecoesConfigMySQL(mysqlConn) {
+  const [rows] = await mysqlConn.execute(`
+    SELECT vc.vendedor_id, v.rca AS codusur, f.codigo AS codfilial, vc.departamentos, vc.secoes, vc.ativo
+    FROM bijou_vendedor_secoes_config vc
+    JOIN vendedores v ON v.id = vc.vendedor_id
+    LEFT JOIN filiais f ON f.id = v.filial_id
+    WHERE vc.ativo = 1
+  `);
+  return rows.map(r => ({
+    vendedor_id: r.vendedor_id,
+    codusur: (r.codusur || '').trim(),
+    codfilial: normalizeCodigoFilial(r.codfilial || ''),
+    departamentosCSV: (r.departamentos || '').trim() || null,
+    secoesCSV: (r.secoes || '').trim() || null,
+    departamentosList: parseCSVToIntArray((r.departamentos || '').trim()),
+    secoesList: parseCSVToIntArray((r.secoes || '').trim()),
+  }));
+}
+
+// Sincronização Bijou Seções por Vendedor
+async function syncBijouVendedorSecoes() {
+  console.log('[BijouVendedorSecoes] Iniciando sincronização de Bijou por seções (Vendedor)');
+  let oracleConnection;
+  let mysqlConnection;
+  try {
+    oracleConnection = await oracledb.getConnection({
+      user: process.env.LCDBUSER,
+      password: process.env.LCDBPASS,
+      connectString: `${process.env.LCDBHOST}/${process.env.LCDBNAME}`
+    });
+    mysqlConnection = await criarConexaoMySQL();
+    await ensureBijouTablesExist(mysqlConnection);
+
+    const configs = await listarBijouVendedorSecoesConfigMySQL(mysqlConnection);
+    if (!configs || configs.length === 0) {
+      console.log('[BijouVendedorSecoes] Nenhuma configuração ativa encontrada. Encerrando.');
+      return;
+    }
+
+    const now = new Date();
+    const mesAtual = now.getMonth() + 1;
+    const anoAtual = now.getFullYear();
+    const { first: dtIniAtual, last: dtFimAtual } = firstAndLastDayOfMonth(anoAtual, mesAtual);
+
+    const mesAnteriorDate = new Date(anoAtual, mesAtual - 2, 1);
+    const mesAnterior = mesAnteriorDate.getMonth() + 1;
+    const anoAnterior = mesAnteriorDate.getFullYear();
+    const { first: dtIniAnt, last: dtFimAnt } = firstAndLastDayOfMonth(anoAnterior, mesAnterior);
+
+    // Para cada vendedor configurado, apurar e upsert
+    for (const cfg of configs) {
+      if (!cfg.codusur || !cfg.codfilial) {
+        console.warn(`[BijouVendedorSecoes] Config inválida: vendedor_id=${cfg.vendedor_id} codusur/codfilial ausentes. Pulando.`);
+        continue;
+      }
+      // Mês atual
+      const oracleTotaisAtual = await getVendasTotaisOracle(oracleConnection,
+        moment(dtIniAtual).format('YYYY-MM-DD'),
+        moment(dtFimAtual).format('YYYY-MM-DD'),
+        cfg.codfilial,
+        cfg.codusur,
+        cfg.departamentosList || null,
+        cfg.secoesList || null
+      );
+      const valorTotalAtual = toNumberSafe(oracleTotaisAtual.vlvenda) - toNumberSafe(oracleTotaisAtual.vldevolucao);
+      await upsertTotaisBijouVendedorSecoes(mysqlConnection, [{ valor_total: valorTotalAtual }], {
+        mes: mesAtual,
+        ano: anoAtual,
+        data_inicio: dtIniAtual,
+        data_fim: dtFimAtual
+      }, cfg);
+
+      // Mês anterior
+      const oracleTotaisAnt = await getVendasTotaisOracle(oracleConnection,
+        moment(dtIniAnt).format('YYYY-MM-DD'),
+        moment(dtFimAnt).format('YYYY-MM-DD'),
+        cfg.codfilial,
+        cfg.codusur,
+        cfg.departamentosList || null,
+        cfg.secoesList || null
+      );
+      const valorTotalAnt = toNumberSafe(oracleTotaisAnt.vlvenda) - toNumberSafe(oracleTotaisAnt.vldevolucao);
+      await upsertTotaisBijouVendedorSecoes(mysqlConnection, [{ valor_total: valorTotalAnt }], {
+        mes: mesAnterior,
+        ano: anoAnterior,
+        data_inicio: dtIniAnt,
+        data_fim: dtFimAnt
+      }, cfg);
+    }
+
+    console.log('[BijouVendedorSecoes] Concluída sincronização de mês atual e anterior.');
+  } catch (e) {
+    console.error('[BijouVendedorSecoes] Erro na sincronização:', e && e.message ? e.message : e);
+  } finally {
+    try { if (oracleConnection) await oracleConnection.close(); } catch {}
+    try { if (mysqlConnection) await mysqlConnection.end(); } catch {}
+  }
+}
+
+async function logBijouTotalsForFilial(mysqlConn, codfilial) {
+  try {
+    const [rows] = await mysqlConn.query(
+      `SELECT filial_id, codfilial, mes, ano, valor_total, data_inicio, data_fim, config_key
+       FROM bijou_filial_totais
+       WHERE codfilial = ?
+       ORDER BY ano DESC, mes DESC
+       LIMIT 5`,
+      [codfilial]
+    );
+    if (!rows || rows.length === 0) {
+      console.warn(`[BijouFilial][TESTE] Nenhum registro encontrado em bijou_filial_totais para codfilial=${codfilial}`);
+      return;
+    }
+    console.log('[BijouFilial][TESTE] Últimos registros inseridos/atualizados:');
+    for (const r of rows) {
+      console.log(`  -> filial_id=${r.filial_id} codfilial=${r.codfilial} mes=${r.mes} ano=${r.ano} total=${Number(r.valor_total).toFixed(2)} intervalo=${r.data_inicio}..${r.data_fim} key=${r.config_key}`);
+    }
+  } catch (e) {
+    console.warn('[BijouFilial][TESTE] Falha ao consultar registros:', e && e.message ? e.message : e);
+  }
+}
+
+// Conversão robusta de decimais vindos do Oracle (ponto e vírgula)
+function toNumberSafe(value) {
+  if (value == null) return 0;
+  if (typeof value === 'number') {
+    return isNaN(value) ? 0 : value;
+  }
+  if (typeof value === 'string') {
+    let s = value.trim();
+    if (s.includes(',') && s.includes('.')) {
+      s = s.replace(/\./g, '').replace(',', '.');
+    } else if (s.includes(',')) {
+      s = s.replace(',', '.');
+    }
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+  }
+  return 0;
+}

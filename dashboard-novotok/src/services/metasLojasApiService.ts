@@ -203,6 +203,19 @@ class MetasLojasApiService {
     funcionarios?: any[];
   }): Promise<MetaLoja> {
     try {
+      const mapVendedoraBijou = (vb: any) => ({
+        id: vb.id,
+        nome: vb.nome,
+        funcao: vb.funcao ?? 'VENDEDORA BIJOU/MAKE/BOLSAS',
+        bijou_make_bolsas: vb.bijouMakeBolsas ?? vb.bijou_make_bolsas ?? 0,
+        valor_total_bijou_filial: vb.valorTotalBijouFilial ?? vb.valor_total_bijou_filial ?? 0,
+        bijou_make_bolsas_secoes: vb.bijouMakeBolsasSecoes ?? vb.bijou_make_bolsas_secoes ?? 0,
+        valor_total_bijou_filial_secoes: vb.valorTotalBijouFilialSecoes ?? vb.valor_total_bijou_filial_secoes ?? 0,
+        percentual_comissao_bijou: vb.percentualComissaoBijou ?? vb.percentual_comissao_bijou ?? 0,
+        valor_comissao_bijou: vb.valorComissaoBijou ?? vb.valor_comissao_bijou ?? 0,
+        metasProdutos: vb.metasProdutos || []
+      });
+
       const response = await api.post('/cadastrar_meta_loja.php', {
         loja_id: meta.lojaId,
         nome_loja: meta.nomeLoja,
@@ -212,7 +225,7 @@ class MetasLojasApiService {
         ativo: meta.ativo ?? true,
         operadoras_caixa: meta.operadorasCaixa || [],
         vendedoras: meta.vendedoras || [],
-        vendedoras_bijou: meta.vendedorasBijou || [],
+        vendedoras_bijou: (meta.vendedorasBijou || []).map(mapVendedoraBijou),
         gerente: meta.gerente || null,
         campanhas: meta.campanhas || [],
         valor_venda_loja_total: meta.valorVendaLojaTotal || 0,
@@ -241,6 +254,19 @@ class MetasLojasApiService {
     funcionarios?: any[];
   }): Promise<MetaLoja> {
     try {
+      const mapVendedoraBijou = (vb: any) => ({
+        id: vb.id,
+        nome: vb.nome,
+        funcao: vb.funcao ?? 'VENDEDORA BIJOU/MAKE/BOLSAS',
+        bijou_make_bolsas: vb.bijouMakeBolsas ?? vb.bijou_make_bolsas ?? 0,
+        valor_total_bijou_filial: vb.valorTotalBijouFilial ?? vb.valor_total_bijou_filial ?? 0,
+        bijou_make_bolsas_secoes: vb.bijouMakeBolsasSecoes ?? vb.bijou_make_bolsas_secoes ?? 0,
+        valor_total_bijou_filial_secoes: vb.valorTotalBijouFilialSecoes ?? vb.valor_total_bijou_filial_secoes ?? 0,
+        percentual_comissao_bijou: vb.percentualComissaoBijou ?? vb.percentual_comissao_bijou ?? 0,
+        valor_comissao_bijou: vb.valorComissaoBijou ?? vb.valor_comissao_bijou ?? 0,
+        metasProdutos: vb.metasProdutos || []
+      });
+
       const response = await api.put('/atualizar_meta_loja.php', {
         id,
         loja_id: meta.lojaId,
@@ -251,7 +277,7 @@ class MetasLojasApiService {
         ativo: meta.ativo ?? true,
         operadoras_caixa: meta.operadorasCaixa || [],
         vendedoras: meta.vendedoras || [],
-        vendedoras_bijou: meta.vendedorasBijou || [],
+        vendedoras_bijou: (meta.vendedorasBijou || []).map(mapVendedoraBijou),
         gerente: meta.gerente || null,
         campanhas: meta.campanhas || [],
         valor_venda_loja_total: meta.valorVendaLojaTotal || 0,

@@ -5,6 +5,10 @@ import { listarFiliais } from '../services/filiaisService';
 import { Container, Row, Col, Card, Button, Form, Table, Modal, Alert, Badge, Tabs, Tab, OverlayTrigger, Tooltip, ButtonGroup } from 'react-bootstrap';
 import PageHeader from './PageHeader';
 import { useAuth } from '../contexts/AuthContext';
+import { obterVendaTotal } from '../services/vendasService';
+import bijouFilialService from '../services/bijouFilialService';
+import bijouFilialSecoesService from '../services/bijouFilialSecoesService';
+import bijouVendedorSecoesService from '../services/bijouVendedorSecoesService';
 
 // Interfaces
 interface Filial {
@@ -46,6 +50,7 @@ interface OperadoraCaixa {
   interface Vendedora {
     id: string;
     nome: string;
+    rca?: string;
     funcao: string;
     valorVendidoTotal: number;
     esmaltes: number;
@@ -66,6 +71,14 @@ interface VendedoraBijou {
   nome: string;
   funcao: string;
   bijouMakeBolsas: number;
+  valorTotalBijouFilial?: number;
+  // Novos campos de totais por Seções (para cálculo de comissão)
+  bijouMakeBolsasSecoes?: number;
+  valorTotalBijouFilialSecoes?: number;
+  // Novos campos derivados para exibição e cálculo
+  sobraDepartamentosBijou?: number;
+  sobraSecoesBijou?: number;
+  totalFinal?: number;
   percentualComissaoBijou?: number;
   valorComissaoBijou?: number;
   metasProdutos: MetaProduto[];
@@ -383,19 +396,42 @@ const MetaLojas: React.FC = () => {
     let changed = false;
     const recalculado = vendedorasBijou.map(vb => {
       const bijou = toNumeroSeguro((vb.bijouMakeBolsas ?? (vb as any).bijou_make_bolsas ?? 0));
-      const perc = (vb.percentualComissaoBijou ?? (vb as any).percentual_comissao_bijou ?? 0) as number;
+      const filial = toNumeroSeguro((vb.valorTotalBijouFilial ?? (vb as any).valor_total_bijou_filial ?? 0));
+      const bijouSec = toNumeroSeguro((vb.bijouMakeBolsasSecoes ?? 0));
+      const filialSec = toNumeroSeguro((vb.valorTotalBijouFilialSecoes ?? 0));
+      const sobraDepto = Math.max(0, filial - bijou);
+      const sobraSec = Math.max(0, filialSec - bijouSec);
+      const meiaSobraDepto = sobraDepto / 2;
+      const meiaSobraSec = sobraSec / 2;
+      const totalFinal = bijou + meiaSobraDepto + bijouSec + meiaSobraSec;
+      const calc = totalFinal * 0.01;
       const atual = (vb.valorComissaoBijou ?? (vb as any).valor_comissao_bijou) as number | undefined;
-      const somaMetas = (vb.metasProdutos ?? []).reduce((acc: number, m: any) => acc + (m?.valorComissao ?? 0), 0);
-      const calc = ((bijou * perc) / 100) + somaMetas;
       if (!Number.isFinite(calc)) return vb;
       const diff = atual == null ? Math.abs(calc) : Math.abs(calc - atual);
-      if (diff > 0.005) { changed = true; return { ...vb, valorComissaoBijou: calc }; }
+      if (diff > 0.005
+        || vb.totalFinal !== totalFinal
+        || vb.sobraDepartamentosBijou !== sobraDepto
+        || vb.sobraSecoesBijou !== sobraSec
+        || vb.percentualComissaoBijou !== 1
+      ) { 
+        changed = true; 
+        return { 
+          ...vb, 
+          percentualComissaoBijou: 1,
+          valorComissaoBijou: calc,
+          totalFinal,
+          sobraDepartamentosBijou: sobraDepto,
+          sobraSecoesBijou: sobraSec
+        }; 
+      }
       return vb;
     });
     if (changed) setVendedorasBijou(recalculado);
   }, [vendedorasBijou]);
   // Estado auxiliar para manter o texto mascarado do campo Bijou/Make/Bolsas por vendedora
   const [bijouInputValores, setBijouInputValores] = useState<Record<string, string>>({});
+  // Estado auxiliar para manter o texto mascarado do campo Bijou Filial por vendedora
+  const [bijouFilialInputValores, setBijouFilialInputValores] = useState<Record<string, string>>({});
   const [gerente, setGerente] = useState<Gerente | null>(null);
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
   
@@ -565,15 +601,16 @@ const MetaLojas: React.FC = () => {
     const novaVendedora: Vendedora = {
       id: Date.now().toString(),
       nome: '',
+      rca: '',
       funcao: 'ATENDENTE DE LOJA',
       valorVendidoTotal: 0,
       esmaltes: 0,
       profissionalParceiras: 0,
       valorVendidoMake: 0,
       bijouMakeBolsas: 0,
-      percentualComissaoVendaTotal: 0,
+      percentualComissaoVendaTotal: 0.25,
       valorComissaoVendaTotal: 0,
-      percentualComissaoProfissionalParceiras: 0,
+      percentualComissaoProfissionalParceiras: 2,
       valorComissaoProfissionalParceiras: 0,
       valorComissaoTotal: 0,
       metasProdutos: []
@@ -592,15 +629,16 @@ const MetaLojas: React.FC = () => {
       .map(v => ({
         id: `${Date.now()}-${v.id}`,
         nome: v.nome,
+        rca: v.rca,
         funcao: 'ATENDENTE DE LOJA',
         valorVendidoTotal: 0,
         esmaltes: 0,
         profissionalParceiras: 0,
         valorVendidoMake: 0,
         bijouMakeBolsas: 0,
-        percentualComissaoVendaTotal: 0,
+        percentualComissaoVendaTotal: 0.25,
         valorComissaoVendaTotal: 0,
-        percentualComissaoProfissionalParceiras: 0,
+        percentualComissaoProfissionalParceiras: 2,
         valorComissaoProfissionalParceiras: 0,
         valorComissaoTotal: 0,
         metasProdutos: []
@@ -619,8 +657,32 @@ const MetaLojas: React.FC = () => {
     setVendedoras(vendedoras.filter(v => v.id !== id));
   };
 
+  // Buscar e auto-preencher Valor Vendido Total para uma vendedora
+  const preencherValorVendidoTotal = async (vendedoraId: string, rca: string | undefined) => {
+    try {
+      if (!rca || !novaMetaDataInicio || !novaMetaDataFim) return;
+      const resp = await obterVendaTotal(rca, novaMetaDataInicio, novaMetaDataFim);
+      if (resp?.success && resp?.venda_total) {
+        const total = Number(resp.venda_total.total_valor || 0);
+        atualizarVendedora(vendedoraId, 'valorVendidoTotal', total);
+      }
+    } catch (e) {
+      console.error('Erro ao obter venda total da vendedora:', e);
+    }
+  };
+
+  // Handler para seleção de vendedora pelo RCA
+  const selecionarVendedoraPorRca = async (id: string, rcaSelecionado: string) => {
+    const vendedor = getVendedoresFiltrados().find(v => v.rca === rcaSelecionado);
+    const nomeVendedor = vendedor?.nome || '';
+    // Usar atualização funcional para evitar perda de estado em atualizações encadeadas
+    setVendedoras(prev => prev.map(v => v.id === id ? { ...v, nome: nomeVendedor, rca: rcaSelecionado } : v));
+    await preencherValorVendidoTotal(id, rcaSelecionado);
+  };
+
   const atualizarVendedora = (id: string, campo: string, valor: any) => {
-    setVendedoras(vendedoras.map(v => {
+    // Usar atualização funcional para garantir que o estado mais recente seja utilizado
+    setVendedoras(prev => prev.map(v => {
       if (v.id !== id) return v;
       // Se o campo atualizado for monetário, armazenar em número
       const camposMonetarios = new Set([
@@ -634,11 +696,12 @@ const MetaLojas: React.FC = () => {
       const make = toNumeroSeguro(atualizado.valorVendidoMake);
       const profParc = toNumeroSeguro(atualizado.profissionalParceiras);
       const percTotal = Number(atualizado.percentualComissaoVendaTotal || 0);
-      const percProf = Number(atualizado.percentualComissaoProfissionalParceiras || 0);
+      const percPred = calcularPercentualPredominanteMetas(atualizado.metasProdutos || []);
+      const percProf = Number((percPred ?? atualizado.percentualComissaoProfissionalParceiras ?? 2));
       const metasSum = somarComissoesMetas(atualizado.metasProdutos || []);
-      const baseTotal = total - esmaltes - make - profParc - metasSum;
+      const baseTotal = total - esmaltes - make - profParc;
       const comissaoTotal = (baseTotal * percTotal) / 100;
-      const comissaoProf = (profParc * percProf) / 100 + metasSum;
+      const comissaoProf = (profParc * percProf) / 100;
       atualizado.valorComissaoVendaTotal = comissaoTotal;
       atualizado.valorComissaoProfissionalParceiras = comissaoProf;
       atualizado.valorComissaoTotal = comissaoTotal + comissaoProf;
@@ -653,12 +716,14 @@ const MetaLojas: React.FC = () => {
       nome: '',
       funcao: 'VENDEDORA BIJOU/MAKE/BOLSAS',
       bijouMakeBolsas: 0,
+      valorTotalBijouFilial: 0,
       percentualComissaoBijou: 0,
       valorComissaoBijou: 0,
       metasProdutos: []
     };
     setVendedorasBijou([...vendedorasBijou, novaVendedoraBijou]);
     setBijouInputValores(prev => ({ ...prev, [novaVendedoraBijou.id]: aplicarMascaraMonetaria('0') }));
+    setBijouFilialInputValores(prev => ({ ...prev, [novaVendedoraBijou.id]: aplicarMascaraMonetaria('0') }));
   };
 
   const removerVendedoraBijou = (id: string) => {
@@ -668,21 +733,186 @@ const MetaLojas: React.FC = () => {
       delete next[id];
       return next;
     });
+    setBijouFilialInputValores(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  // Buscar e auto-preencher Valor Bijou/Make/Bolsas (campos antigos)
+  const preencherValorVendidoTotalBijou = async (vendedoraId: string, rca: string | undefined) => {
+    try {
+      if (!rca || !novaMetaDataInicio || !novaMetaDataFim) return;
+      const resp = await obterVendaTotal(rca, novaMetaDataInicio, novaMetaDataFim);
+      if (resp?.success && resp?.venda_total) {
+        const total = Number(resp.venda_total.total_valor || 0);
+        atualizarVendedoraBijou(vendedoraId, 'bijouMakeBolsas', total);
+        setBijouInputValores(prev => ({ ...prev, [vendedoraId]: aplicarMascaraMonetaria(String(total.toFixed(2))) }));
+      }
+    } catch (e) {
+      console.error('Erro ao obter venda total da vendedora bijou:', e);
+    }
+  };
+
+  // Buscar e auto-preencher Bijou Filial (R$) para o período/filial selecionados (campos antigos)
+  const preencherValorTotalBijouFilial = async (vendedoraId: string) => {
+    try {
+      if (!novaMetaFilial || !novaMetaDataInicio) {
+        // Sem pré-requisitos: zerar valor da loja (departamentos)
+        atualizarVendedoraBijou(vendedoraId, 'valorTotalBijouFilial', 0);
+        setBijouFilialInputValores(prev => ({ ...prev, [vendedoraId]: aplicarMascaraMonetaria('0') }));
+        return;
+      }
+      const parts = (novaMetaDataInicio || '').split('-');
+      const mes = parts.length >= 2 ? Number(parts[1]) : new Date(novaMetaDataInicio).getMonth() + 1;
+      const ano = parts.length >= 1 ? Number(parts[0]) : new Date(novaMetaDataInicio).getFullYear();
+
+      // Resolver código da filial (aceita id ou código informado em novaMetaFilial)
+      const filialObj = filiais.find(f => f.id.toString() === novaMetaFilial);
+      const codfilial = filialObj ? String(filialObj.codigo) : String(novaMetaFilial);
+
+      const resp = await bijouFilialService.listarTotaisBijouFilial({
+        filiais: [codfilial],
+        mes,
+        ano
+      });
+      if (resp.success && resp.data && resp.data.length > 0) {
+        const total = resp.data.reduce((acc, t) => acc + Number(t.valor_total || 0), 0);
+        atualizarVendedoraBijou(vendedoraId, 'valorTotalBijouFilial', total);
+        setBijouFilialInputValores(prev => ({ ...prev, [vendedoraId]: aplicarMascaraMonetaria(String(total.toFixed(2))) }));
+      } else {
+        // Sem dados: zerar
+        atualizarVendedoraBijou(vendedoraId, 'valorTotalBijouFilial', 0);
+        setBijouFilialInputValores(prev => ({ ...prev, [vendedoraId]: aplicarMascaraMonetaria('0') }));
+      }
+    } catch (e) {
+      console.error('Erro ao obter total Bijou da filial:', e);
+      // Em erro: zerar para evitar valores antigos
+      atualizarVendedoraBijou(vendedoraId, 'valorTotalBijouFilial', 0);
+      setBijouFilialInputValores(prev => ({ ...prev, [vendedoraId]: aplicarMascaraMonetaria('0') }));
+    }
+  };
+
+  // Novos preenchimentos: totais por Seções para comissão
+  const preencherValorVendidoTotalBijouSecoes = async (
+    vendedoraId: string,
+    rca: string | undefined,
+    vendedorIdNum?: number
+  ) => {
+    try {
+      if (!rca || !novaMetaDataInicio) {
+        // Sem pré-requisitos: zerar valor de seções do vendedor
+        atualizarVendedoraBijou(vendedoraId, 'bijouMakeBolsasSecoes', 0);
+        return;
+      }
+      const parts = (novaMetaDataInicio || '').split('-');
+      const mes = parts.length >= 2 ? Number(parts[1]) : new Date(novaMetaDataInicio).getMonth() + 1;
+      const ano = parts.length >= 1 ? Number(parts[0]) : new Date(novaMetaDataInicio).getFullYear();
+
+      const resp = await bijouVendedorSecoesService.listarTotaisBijouVendedorSecoes({
+        rcas: rca ? [rca] : [],
+        vendedorIds: vendedorIdNum ? [vendedorIdNum] : [],
+        mes,
+        ano,
+      });
+      if (resp?.success && resp?.data && resp.data.length > 0) {
+        const total = resp.data.reduce((acc, t) => acc + Number(t.valor_total || 0), 0);
+        atualizarVendedoraBijou(vendedoraId, 'bijouMakeBolsasSecoes', total);
+      } else {
+        // Sem dados: zerar
+        atualizarVendedoraBijou(vendedoraId, 'bijouMakeBolsasSecoes', 0);
+      }
+    } catch (e) {
+      console.error('Erro ao obter totais Bijou por Seções (vendedora):', e);
+      // Em erro: zerar
+      atualizarVendedoraBijou(vendedoraId, 'bijouMakeBolsasSecoes', 0);
+    }
+  };
+
+  const preencherValorTotalBijouFilialSecoes = async (vendedoraId: string) => {
+    try {
+      if (!novaMetaFilial || !novaMetaDataInicio) {
+        // Sem pré-requisitos: zerar valor de seções da loja
+        atualizarVendedoraBijou(vendedoraId, 'valorTotalBijouFilialSecoes', 0);
+        return;
+      }
+      const parts = (novaMetaDataInicio || '').split('-');
+      const mes = parts.length >= 2 ? Number(parts[1]) : new Date(novaMetaDataInicio).getMonth() + 1;
+      const ano = parts.length >= 1 ? Number(parts[0]) : new Date(novaMetaDataInicio).getFullYear();
+
+      const filialObj = filiais.find(f => f.id.toString() === novaMetaFilial);
+      const codfilialRaw = filialObj ? String(filialObj.codigo) : String(novaMetaFilial);
+      // Normalizar código numérico da filial (remover zeros à esquerda) para compatibilidade com tabela
+      const codfilial = (/^\d+$/.test(codfilialRaw)) ? String(Number(codfilialRaw)) : codfilialRaw;
+
+      const resp = await bijouFilialSecoesService.listarTotaisBijouFilialSecoes({
+        filiais: [codfilial],
+        mes,
+        ano,
+      });
+      if (resp.success && resp.data && resp.data.length > 0) {
+        const total = resp.data.reduce((acc, t) => acc + Number(t.valor_total || 0), 0);
+        atualizarVendedoraBijou(vendedoraId, 'valorTotalBijouFilialSecoes', total);
+      } else {
+        // Sem dados: zerar
+        atualizarVendedoraBijou(vendedoraId, 'valorTotalBijouFilialSecoes', 0);
+      }
+    } catch (e) {
+      console.error('Erro ao obter totais Bijou por Seções (filial):', e);
+      // Em erro: zerar
+      atualizarVendedoraBijou(vendedoraId, 'valorTotalBijouFilialSecoes', 0);
+    }
+  };
+
+  // Removido: buscar total de seções da loja apenas ao selecionar a vendedora
+
+  // Handler para seleção de vendedora bijou pelo Nome (usa RCA para API)
+  const selecionarVendedoraBijouPorNome = async (id: string, nomeSelecionado: string) => {
+    const vendedor = getVendedoresFiltrados().find(v => v.nome === nomeSelecionado);
+    const rcaSelecionado = vendedor?.rca;
+    // Atualizar nome da vendedora bijou usando setState funcional
+    setVendedorasBijou(prev => prev.map(vb => vb.id === id ? { 
+      ...vb, 
+      nome: nomeSelecionado,
+      // Limpar valores derivados para evitar exibição antiga enquanto carrega
+      valorTotalBijouFilial: 0,
+      bijouMakeBolsasSecoes: 0,
+      valorTotalBijouFilialSecoes: 0,
+      sobraDepartamentosBijou: 0,
+      sobraSecoesBijou: 0,
+      totalFinal: 0,
+      valorComissaoBijou: 0,
+    } : vb));
+    // Resetar máscaras de inputs dependentes
+    setBijouFilialInputValores(prev => ({ ...prev, [id]: aplicarMascaraMonetaria('0') }));
+    await preencherValorVendidoTotalBijou(id, rcaSelecionado);
+    await preencherValorTotalBijouFilial(id);
+    await preencherValorVendidoTotalBijouSecoes(id, rcaSelecionado, vendedor?.id);
+    await preencherValorTotalBijouFilialSecoes(id);
   };
 
   const atualizarVendedoraBijou = (id: string, campo: string, valor: any) => {
-    setVendedorasBijou(vendedorasBijou.map(vb => {
+    // Usar atualização funcional para garantir uso do estado mais recente
+    setVendedorasBijou(prev => prev.map(vb => {
       if (vb.id !== id) return vb;
-      const camposMonetariosBijou = new Set(['bijouMakeBolsas']);
+      const camposMonetariosBijou = new Set(['bijouMakeBolsas', 'valorTotalBijouFilial', 'bijouMakeBolsasSecoes', 'valorTotalBijouFilialSecoes']);
       const valorProcessado = camposMonetariosBijou.has(campo) ? toNumeroSeguro(valor) : valor;
       const atualizado = { ...vb, [campo]: valorProcessado } as VendedoraBijou & any;
-      const bijouValor = toNumeroSeguro((atualizado.bijouMakeBolsas ?? atualizado.bijou_make_bolsas ?? 0));
-      const perc = (atualizado.percentualComissaoBijou ?? atualizado.percentual_comissao_bijou ?? 0) as number;
-      // Recalcular comissão total (bijou + metasProdutos) quando bijouMakeBolsas ou percentual mudar
-      if (campo === 'bijouMakeBolsas' || campo === 'percentualComissaoBijou') {
-        const somaMetas = (atualizado.metasProdutos ?? []).reduce((acc: number, m: any) => acc + (m?.valorComissao ?? 0), 0);
-        atualizado.valorComissaoBijou = ((bijouValor * perc) / 100) + somaMetas;
-      }
+      const bijou = toNumeroSeguro((atualizado.bijouMakeBolsas ?? (atualizado as any).bijou_make_bolsas ?? 0));
+      const filial = toNumeroSeguro((atualizado.valorTotalBijouFilial ?? (atualizado as any).valor_total_bijou_filial ?? 0));
+      const bijouSec = toNumeroSeguro((atualizado.bijouMakeBolsasSecoes ?? 0));
+      const filialSec = toNumeroSeguro((atualizado.valorTotalBijouFilialSecoes ?? 0));
+      const sobraDepto = Math.max(0, filial - bijou);
+      const sobraSec = Math.max(0, filialSec - bijouSec);
+      const meiaSobraDepto = sobraDepto / 2;
+      const meiaSobraSec = sobraSec / 2;
+      const totalFinal = bijou + meiaSobraDepto + bijouSec + meiaSobraSec;
+      atualizado.percentualComissaoBijou = 1;
+      atualizado.totalFinal = totalFinal;
+      atualizado.sobraDepartamentosBijou = sobraDepto;
+      atualizado.sobraSecoesBijou = sobraSec;
+      atualizado.valorComissaoBijou = totalFinal * 0.01;
       return atualizado;
     }));
   };
@@ -693,8 +923,12 @@ const MetaLojas: React.FC = () => {
   };
 
   const calcularValorComissaoMeta = (meta: MetaProduto): number => {
-    if ((meta.qtdVendido || 0) >= (meta.qtdMeta || 0)) {
-      return calcularValorComissaoBase(meta.valorVendido || 0, meta.percentualSobreVenda || 0);
+    const qtdMeta = toNumeroSeguro(meta.qtdMeta);
+    const qtdVendido = toNumeroSeguro(meta.qtdVendido);
+    if (qtdMeta > 0 && qtdVendido >= qtdMeta) {
+      const valorVendido = toNumeroSeguro(meta.valorVendido || 0);
+      const percentual = Number(meta.percentualSobreVenda || 0);
+      return calcularValorComissaoBase(valorVendido, percentual);
     }
     return 0;
   };
@@ -703,13 +937,45 @@ const MetaLojas: React.FC = () => {
     return (metas || []).reduce((acc, m) => acc + (m.valorComissao || 0), 0);
   };
 
+  // Considerar como atingida apenas quando há Qtd Meta > 0 e Qtd Vendido ≥ Qtd Meta
+  const metaAtingida = (meta: MetaProduto): boolean => {
+    const qtdMeta = toNumeroSeguro(meta.qtdMeta);
+    const qtdVendido = toNumeroSeguro(meta.qtdVendido);
+    return qtdMeta > 0 && qtdVendido >= qtdMeta;
+  };
+
+  // Somar Profissional/Parceiras apenas das metas atingidas
+  const calcularProfissionalParceirasAuto = (metas: MetaProduto[]): number => {
+    return (metas || []).reduce((acc, m) => acc + (metaAtingida(m) ? toNumeroSeguro(m.valorVendido || 0) : 0), 0);
+  };
+
+  // Retorna o percentual predominante entre as metas lançadas (mais frequente > 0)
+  const calcularPercentualPredominanteMetas = (metas: MetaProduto[]): number | null => {
+    if (!metas || metas.length === 0) return null;
+    const contagem = new Map<number, number>();
+    metas.forEach((m) => {
+      const p = Number(m.percentualSobreVenda ?? 0);
+      if (p > 0) contagem.set(p, (contagem.get(p) ?? 0) + 1);
+    });
+    if (contagem.size === 0) return null;
+    let escolhido: number | null = null;
+    let max = -1;
+    contagem.forEach((qtd, perc) => {
+      if (qtd > max) {
+        max = qtd;
+        escolhido = perc;
+      }
+    });
+    return escolhido;
+  };
+
   const adicionarMetaProduto = (funcionarioId: string, tipoFuncionario: 'operadora' | 'vendedora' | 'vendedoraBijou') => {
     const novaMeta: MetaProduto = {
       id: Date.now().toString(),
       nomeProdutoMarca: '',
       qtdMeta: 0,
       qtdVendido: 0,
-      percentualSobreVenda: 0,
+      percentualSobreVenda: 2,
       valorVendido: 0,
       valorComissao: 0
     };
@@ -726,18 +992,21 @@ const MetaLojas: React.FC = () => {
           const total = toNumeroSeguro(v.valorVendidoTotal);
           const esmaltes = toNumeroSeguro(v.esmaltes);
           const make = toNumeroSeguro(v.valorVendidoMake);
-          const profParc = toNumeroSeguro(v.profissionalParceiras);
+          const profParcAuto = calcularProfissionalParceirasAuto(metasAtualizadas);
+          const profParc = profParcAuto;
           const percTotal = Number(v.percentualComissaoVendaTotal || 0);
-          const percProf = Number(v.percentualComissaoProfissionalParceiras || 0);
-          const baseTotal = total - esmaltes - make - profParc - soma;
+          const percPred = calcularPercentualPredominanteMetas(metasAtualizadas);
+          const percProf = Number((percPred ?? v.percentualComissaoProfissionalParceiras ?? 2));
+          const baseTotal = total - esmaltes - make - profParc;
           const comissaoTotal = (baseTotal * percTotal) / 100;
-          const comissaoProf = (profParc * percProf) / 100 + soma;
+          const comissaoProf = (profParc * percProf) / 100;
           return { 
             ...v, 
-            metasProdutos: metasAtualizadas, 
+            metasProdutos: metasAtualizadas,
+            profissionalParceiras: profParcAuto,
             valorComissaoVendaTotal: comissaoTotal,
             valorComissaoProfissionalParceiras: comissaoProf,
-            valorComissaoTotal: comissaoTotal + comissaoProf
+          valorComissaoTotal: comissaoTotal + comissaoProf
           };
         }
         return v;
@@ -746,14 +1015,9 @@ const MetaLojas: React.FC = () => {
       setVendedorasBijou(vendedorasBijou.map(vb => {
         if (vb.id === funcionarioId) {
           const metasAtualizadas = [...vb.metasProdutos, novaMeta];
-          const soma = somarComissoesMetas(metasAtualizadas);
-          const bijouValor = toNumeroSeguro((vb.bijouMakeBolsas ?? (vb as any).bijou_make_bolsas ?? 0));
-          const perc = (vb.percentualComissaoBijou ?? (vb as any).percentual_comissao_bijou ?? 0) as number;
-          const comissaoBijou = (bijouValor * perc) / 100;
           return { 
             ...vb, 
-            metasProdutos: metasAtualizadas, 
-            valorComissaoBijou: comissaoBijou + soma 
+            metasProdutos: metasAtualizadas
           };
         }
         return vb;
@@ -774,18 +1038,21 @@ const MetaLojas: React.FC = () => {
           const total = toNumeroSeguro(v.valorVendidoTotal);
           const esmaltes = toNumeroSeguro(v.esmaltes);
           const make = toNumeroSeguro(v.valorVendidoMake);
-          const profParc = toNumeroSeguro(v.profissionalParceiras);
+          const profParcAuto = calcularProfissionalParceirasAuto(metasAtualizadas);
+          const profParc = profParcAuto;
           const percTotal = Number(v.percentualComissaoVendaTotal || 0);
-          const percProf = Number(v.percentualComissaoProfissionalParceiras || 0);
-          const baseTotal = total - esmaltes - make - profParc - soma;
+          const percPred = calcularPercentualPredominanteMetas(metasAtualizadas);
+          const percProf = Number((percPred ?? v.percentualComissaoProfissionalParceiras ?? 2));
+          const baseTotal = total - esmaltes - make - profParc;
           const comissaoTotal = (baseTotal * percTotal) / 100;
-          const comissaoProf = (profParc * percProf) / 100 + soma;
+          const comissaoProf = (profParc * percProf) / 100;
           return { 
             ...v, 
-            metasProdutos: metasAtualizadas, 
+            metasProdutos: metasAtualizadas,
+            profissionalParceiras: profParcAuto,
             valorComissaoVendaTotal: comissaoTotal,
             valorComissaoProfissionalParceiras: comissaoProf,
-            valorComissaoTotal: comissaoTotal + comissaoProf
+          valorComissaoTotal: comissaoTotal + comissaoProf
           };
         }
         return v;
@@ -794,11 +1061,7 @@ const MetaLojas: React.FC = () => {
       setVendedorasBijou(vendedorasBijou.map(vb => {
         if (vb.id === funcionarioId) {
           const metasAtualizadas = vb.metasProdutos.filter(m => m.id !== metaId);
-          const soma = somarComissoesMetas(metasAtualizadas);
-          const bijouValor = toNumeroSeguro((vb.bijouMakeBolsas ?? (vb as any).bijou_make_bolsas ?? 0));
-          const perc = (vb.percentualComissaoBijou ?? (vb as any).percentual_comissao_bijou ?? 0) as number;
-          const comissaoBijou = (bijouValor * perc) / 100;
-          return { ...vb, metasProdutos: metasAtualizadas, valorComissaoBijou: comissaoBijou + soma };
+          return { ...vb, metasProdutos: metasAtualizadas };
         }
         return vb;
       }));
@@ -828,18 +1091,21 @@ const MetaLojas: React.FC = () => {
           const total = toNumeroSeguro(v.valorVendidoTotal);
           const esmaltes = toNumeroSeguro(v.esmaltes);
           const make = toNumeroSeguro(v.valorVendidoMake);
-          const profParc = toNumeroSeguro(v.profissionalParceiras);
+          const profParcAuto = calcularProfissionalParceirasAuto(metasAtualizadas);
+          const profParc = profParcAuto;
           const percTotal = Number(v.percentualComissaoVendaTotal || 0);
-          const percProf = Number(v.percentualComissaoProfissionalParceiras || 0);
-          const baseTotal = total - esmaltes - make - profParc - soma;
+          const percPred = calcularPercentualPredominanteMetas(metasAtualizadas);
+          const percProf = Number((percPred ?? v.percentualComissaoProfissionalParceiras ?? 2));
+          const baseTotal = total - esmaltes - make - profParc;
           const comissaoTotal = (baseTotal * percTotal) / 100;
-          const comissaoProf = (profParc * percProf) / 100 + soma;
+          const comissaoProf = (profParc * percProf) / 100;
           return { 
             ...v, 
-            metasProdutos: metasAtualizadas, 
+            metasProdutos: metasAtualizadas,
+            profissionalParceiras: profParcAuto,
             valorComissaoVendaTotal: comissaoTotal,
             valorComissaoProfissionalParceiras: comissaoProf,
-            valorComissaoTotal: comissaoTotal + comissaoProf
+          valorComissaoTotal: comissaoTotal + comissaoProf
           };
         }
         return v;
@@ -848,11 +1114,7 @@ const MetaLojas: React.FC = () => {
       setVendedorasBijou(vendedorasBijou.map(vb => {
         if (vb.id === funcionarioId) {
           const metasAtualizadas = vb.metasProdutos.map(atualizarMeta);
-          const soma = somarComissoesMetas(metasAtualizadas);
-          const bijouValor = (vb.bijouMakeBolsas ?? (vb as any).bijou_make_bolsas ?? 0) as number;
-          const perc = (vb.percentualComissaoBijou ?? (vb as any).percentual_comissao_bijou ?? 0) as number;
-          const comissaoBijou = (bijouValor * perc) / 100;
-          return { ...vb, metasProdutos: metasAtualizadas, valorComissaoBijou: comissaoBijou + soma };
+          return { ...vb, metasProdutos: metasAtualizadas };
         }
         return vb;
       }));
@@ -1158,7 +1420,7 @@ const MetaLojas: React.FC = () => {
       id: Date.now().toString(),
       nomeProdutoMarca: '',
       qtdMeta: 0,
-      percentualSobreVenda: 0
+      percentualSobreVenda: 2
     };
     setNovoGrupo({
       ...novoGrupo,
@@ -1205,18 +1467,21 @@ const MetaLojas: React.FC = () => {
           const total = toNumeroSeguro(v.valorVendidoTotal);
           const esmaltes = toNumeroSeguro(v.esmaltes);
           const make = toNumeroSeguro(v.valorVendidoMake);
-          const profParc = toNumeroSeguro(v.profissionalParceiras);
+          const profParcAuto = calcularProfissionalParceirasAuto(metasAtualizadas);
+          const profParc = profParcAuto;
           const percTotal = Number(v.percentualComissaoVendaTotal || 0);
-          const percProf = Number(v.percentualComissaoProfissionalParceiras || 0);
-          const baseTotal = total - esmaltes - make - profParc - soma;
+          const percPred = calcularPercentualPredominanteMetas(metasAtualizadas);
+          const percProf = Number((percPred ?? v.percentualComissaoProfissionalParceiras ?? 2));
+          const baseTotal = total - esmaltes - make - profParc;
           const comissaoTotal = (baseTotal * percTotal) / 100;
-          const comissaoProf = (profParc * percProf) / 100 + soma;
+          const comissaoProf = (profParc * percProf) / 100;
           return { 
             ...v, 
-            metasProdutos: metasAtualizadas, 
+            metasProdutos: metasAtualizadas,
+            profissionalParceiras: profParcAuto,
             valorComissaoVendaTotal: comissaoTotal,
             valorComissaoProfissionalParceiras: comissaoProf,
-            valorComissaoTotal: comissaoTotal + comissaoProf
+          valorComissaoTotal: comissaoTotal + comissaoProf
           };
         }
         return v;
@@ -1317,6 +1582,22 @@ const MetaLojas: React.FC = () => {
       setCampanhas(campanhasMapeadas);
       setFuncionarios(metaCompleta.funcionarios || []);
       
+      // Tentar mapear RCA para vendedoras carregadas (com base no nome) e auto-preencher valores se estiverem zerados
+      if ((metaCompleta.vendedoras || []).length > 0) {
+        const mapeadas = (metaCompleta.vendedoras || []).map((v: any) => {
+          const vend = vendedoresAPI.find(vend => vend.nome === v.nome);
+          return { ...v, rca: vend?.rca };
+        });
+        setVendedoras(mapeadas);
+        // Preencher valores de venda total apenas quando estiverem 0 ou ausentes
+        for (const v of mapeadas) {
+          const precisaPreencher = !v.valorVendidoTotal || Number(v.valorVendidoTotal) === 0;
+          if (precisaPreencher && v.rca) {
+            await preencherValorVendidoTotal(v.id, v.rca);
+          }
+        }
+      }
+
       setShowModal(true);
     } catch (err) {
       console.error('Erro ao carregar dados da meta:', err);
@@ -1883,20 +2164,20 @@ const MetaLojas: React.FC = () => {
                         <Card.Body>
                           <Row>
                             <Col md={6}>
-                              <Form.Group className="mb-3">
-                                <Form.Label>Nome *</Form.Label>
-                                <Form.Select 
-                                  value={vendedora.nome}
-                                  onChange={(e) => atualizarVendedora(vendedora.id, 'nome', e.target.value)}
-                                >
-                                  <option value="">Selecione uma vendedora</option>
-                                  {getVendedoresFiltrados().map(vendedor => (
-                                    <option key={vendedor.id} value={vendedor.nome}>
-                                      {vendedor.nome} - {vendedor.rca}
-                                    </option>
-                                  ))}
-                                </Form.Select>
-                              </Form.Group>
+                          <Form.Group className="mb-3">
+                            <Form.Label>Nome *</Form.Label>
+                            <Form.Select 
+                              value={vendedora.rca || ''}
+                              onChange={(e) => selecionarVendedoraPorRca(vendedora.id, e.target.value)}
+                            >
+                              <option value="">Selecione uma vendedora</option>
+                              {getVendedoresFiltrados().map(vendedor => (
+                                <option key={vendedor.id} value={vendedor.rca}>
+                                  {vendedor.nome} - {vendedor.rca}
+                                </option>
+                              ))}
+                            </Form.Select>
+                          </Form.Group>
                             </Col>
                             <Col md={6}>
                               <Form.Group className="mb-3">
@@ -1939,7 +2220,8 @@ const MetaLojas: React.FC = () => {
                                 <Form.Control
                                   type="text"
                                   value={formatarNumeroParaExibicao(vendedora.profissionalParceiras)}
-                                  onChange={(e) => handleInputMonetario(e.target.value, (valor) => atualizarVendedora(vendedora.id, 'profissionalParceiras', valor))}
+                                  readOnly={vendedora.metasProdutos.length > 0}
+                                  onChange={vendedora.metasProdutos.length > 0 ? undefined : (e) => handleInputMonetario(e.target.value, (valor) => atualizarVendedora(vendedora.id, 'profissionalParceiras', valor))}
                                   placeholder="R$ 0,00"
                                 />
                               </Form.Group>
@@ -1961,12 +2243,13 @@ const MetaLojas: React.FC = () => {
                           <Row>
                             <Col md={4}>
                               <Form.Group className="mb-3">
-                                <Form.Label>% Comissão sobre Valor Vendido Total</Form.Label>
-                                <Form.Control
+                              <Form.Label>% Comissão sobre Valor Vendido Total</Form.Label>
+                              <Form.Control
                                   type="number"
                                   step="0.01"
-                                  value={vendedora.percentualComissaoVendaTotal ?? 0}
-                                  onChange={(e) => atualizarVendedora(vendedora.id, 'percentualComissaoVendaTotal', parseFloat(e.target.value) || 0)}
+                                  value={vendedora.percentualComissaoVendaTotal ?? 0.25}
+                                  readOnly
+                                  disabled
                                   placeholder="0"
                                 />
                               </Form.Group>
@@ -2002,7 +2285,8 @@ const MetaLojas: React.FC = () => {
                                   type="number"
                                   step="0.01"
                                   value={vendedora.percentualComissaoProfissionalParceiras ?? 0}
-                                  onChange={(e) => atualizarVendedora(vendedora.id, 'percentualComissaoProfissionalParceiras', parseFloat(e.target.value) || 0)}
+                                  readOnly
+                                  disabled
                                   placeholder="0"
                                 />
                               </Form.Group>
@@ -2075,7 +2359,7 @@ const MetaLojas: React.FC = () => {
                                 <Form.Label>Nome *</Form.Label>
                                 <Form.Select 
                                   value={vendedora.nome}
-                                  onChange={(e) => atualizarVendedoraBijou(vendedora.id, 'nome', e.target.value)}
+                                  onChange={(e) => selecionarVendedoraBijouPorNome(vendedora.id, e.target.value)}
                                 >
                                   <option value="">Selecione uma vendedora</option>
                                   {getVendedoresFiltrados().map(vendedor => (
@@ -2100,36 +2384,102 @@ const MetaLojas: React.FC = () => {
                           </Row>
                           <Row>
                             <Col md={6}>
-                          <Form.Group className="mb-3">
-                            <Form.Label>Bijou / Make / Bolsas (R$)</Form.Label>
-                            <Form.Control
-                              type="text"
-                              value={bijouInputValores[vendedora.id] ?? formatarNumeroParaExibicao((vendedora.bijouMakeBolsas ?? (vendedora as any).bijou_make_bolsas ?? 0))}
-                              onChange={(e) => {
-                                const mascarado = aplicarMascaraMonetaria(e.target.value);
-                                setBijouInputValores(prev => ({ ...prev, [vendedora.id]: mascarado }));
-                                const valorNumerico = converterMascaraParaNumero(mascarado);
-                                atualizarVendedoraBijou(vendedora.id, 'bijouMakeBolsas', valorNumerico);
-                              }}
-                              placeholder="R$ 0,00"
-                            />
-                          </Form.Group>
-                            </Col>
-                            <Col md={3}>
                               <Form.Group className="mb-3">
-                                <Form.Label>% Comissão</Form.Label>
+                                <Form.Label>Vendedora Dep. Bijou</Form.Label>
                                 <Form.Control
-                                  type="number"
-                                  step="0.01"
-                                  value={(vendedora.percentualComissaoBijou ?? (vendedora as any).percentual_comissao_bijou ?? 0)}
+                                  type="text"
+                                  value={bijouInputValores[vendedora.id] ?? formatarNumeroParaExibicao((vendedora.bijouMakeBolsas ?? (vendedora as any).bijou_make_bolsas ?? 0))}
                                   onChange={(e) => {
-                                    const perc = parseFloat(e.target.value) || 0;
-                                    atualizarVendedoraBijou(vendedora.id, 'percentualComissaoBijou', perc);
+                                    const mascarado = aplicarMascaraMonetaria(e.target.value);
+                                    setBijouInputValores(prev => ({ ...prev, [vendedora.id]: mascarado }));
+                                    const valorNumerico = converterMascaraParaNumero(mascarado);
+                                    atualizarVendedoraBijou(vendedora.id, 'bijouMakeBolsas', valorNumerico);
                                   }}
-                                  placeholder="0"
+                                  placeholder="R$ 0,00"
                                 />
                               </Form.Group>
                             </Col>
+                            <Col md={6}>
+                              <Form.Group className="mb-3">
+                                <Form.Label>Loja Dep. Bijou</Form.Label>
+                                <Form.Control
+                                  type="text"
+                                  value={bijouFilialInputValores[vendedora.id] ?? formatarNumeroParaExibicao((vendedora.valorTotalBijouFilial ?? (vendedora as any).valor_total_bijou_filial ?? 0))}
+                                  onChange={(e) => {
+                                    const mascarado = aplicarMascaraMonetaria(e.target.value);
+                                    setBijouFilialInputValores(prev => ({ ...prev, [vendedora.id]: mascarado }));
+                                    const valorNumerico = converterMascaraParaNumero(mascarado);
+                                    atualizarVendedoraBijou(vendedora.id, 'valorTotalBijouFilial', valorNumerico);
+                                  }}
+                                  placeholder="R$ 0,00"
+                                />
+                              </Form.Group>
+                            </Col>
+                          </Row>
+                          {/* Novos campos: Totais por Seções (Vendedor e Loja) */}
+                          <Row>
+                            <Col md={6}>
+                              <Form.Group className="mb-3">
+                                <Form.Label>Vendedora Sec. Bijou</Form.Label>
+                                <Form.Control
+                                  type="text"
+                                  value={formatarNumeroParaExibicao((vendedora.bijouMakeBolsasSecoes ?? 0))}
+                                  readOnly
+                                  disabled
+                                  placeholder="R$ 0,00"
+                                />
+                              </Form.Group>
+                            </Col>
+                            <Col md={6}>
+                              <Form.Group className="mb-3">
+                                <Form.Label>Loja Sec. Bijou</Form.Label>
+                                <Form.Control
+                                  type="text"
+                                  value={formatarNumeroParaExibicao((vendedora.valorTotalBijouFilialSecoes ?? 0))}
+                                  readOnly
+                                  disabled
+                                  placeholder="R$ 0,00"
+                                />
+                              </Form.Group>
+                            </Col>
+                          </Row>
+                          {/* Novos campos derivados: sobras e total final */}
+                          <Row>
+                            <Col md={4}>
+                              <Form.Group className="mb-3">
+                                <Form.Label>Vendedora Dep. Bijou + ((Loja Dep. Bijou - Vendedora Dep. Bijou) / 2)</Form.Label>
+                                <Form.Control
+                                  type="text"
+                                  value={formatarNumeroParaExibicao((vendedora.sobraDepartamentosBijou ?? Math.max(0, (toNumeroSeguro(vendedora.valorTotalBijouFilial ?? (vendedora as any).valor_total_bijou_filial ?? 0)) - toNumeroSeguro(vendedora.bijouMakeBolsas ?? (vendedora as any).bijou_make_bolsas ?? 0))))}
+                                  readOnly
+                                  disabled
+                                />
+                              </Form.Group>
+                            </Col>
+                            <Col md={4}>
+                              <Form.Group className="mb-3">
+                                <Form.Label>Vendedora Sec. Bijou + ((Loja Sec. Bijou - Vendedora Sec. Bijou) / 2)</Form.Label>
+                                <Form.Control
+                                  type="text"
+                                  value={formatarNumeroParaExibicao((vendedora.sobraSecoesBijou ?? Math.max(0, toNumeroSeguro(vendedora.valorTotalBijouFilialSecoes ?? 0) - toNumeroSeguro(vendedora.bijouMakeBolsasSecoes ?? 0))))}
+                                  readOnly
+                                  disabled
+                                />
+                              </Form.Group>
+                            </Col>
+                            <Col md={4}>
+                              <Form.Group className="mb-3">
+                                <Form.Label>Total Final (R$)</Form.Label>
+                                <Form.Control
+                                  type="text"
+                                  value={formatarNumeroParaExibicao((vendedora.totalFinal ?? 0))}
+                                  readOnly
+                                  disabled
+                                />
+                              </Form.Group>
+                            </Col>
+                          </Row>
+                          <Row>
                             <Col md={3}>
                               <Form.Group className="mb-3">
                                 <Form.Label>Comissão (R$)</Form.Label>
@@ -2504,9 +2854,9 @@ const MetaLojas: React.FC = () => {
                                     const esmaltes = Number(v?.esmaltes ?? 0);
                                     const valorVendidoMake = Number(v?.valorVendidoMake ?? v?.valor_vendido_make ?? 0);
                                     const profParFallback = Number(v?.profissionalParceiras ?? 0);
-                                    const baseVendaTotal = totalVendido - esmaltes - valorVendidoMake - profParFallback - metasTotal;
+          const baseVendaTotal = totalVendido - esmaltes - valorVendidoMake - profParFallback;
                                     const vendaTotalCalc = (baseVendaTotal * percVendaTotal) / 100;
-                                    const profParceirasCalc = (profParFallback * percProfParceiras) / 100 + metasTotal;
+          const profParceirasCalc = (profParFallback * percProfParceiras) / 100;
                                     totalComissao = vendaTotalCalc + profParceirasCalc;
                                   }
 
@@ -2515,12 +2865,12 @@ const MetaLojas: React.FC = () => {
                                   const esmaltesBase = Number(v?.esmaltes ?? 0);
                                   const valorVendidoMakeBase = Number(v?.valorVendidoMake ?? v?.valor_vendido_make ?? 0);
                                   const profParcBase = Number(v?.profissionalParceiras ?? 0);
-                                  const baseVendaTotalExib = totalVendidoBase - esmaltesBase - valorVendidoMakeBase - profParcBase - metasTotal;
+          const baseVendaTotalExib = totalVendidoBase - esmaltesBase - valorVendidoMakeBase - profParcBase;
                                   const comVendaTotalCalc = (baseVendaTotalExib * percVendaTotal) / 100;
                                   const comVendaTotal = comVendaTotalInformado || comVendaTotalCalc;
 
                                   // Comissão sobre Profissional/Parceiras para exibição (preferir informada, senão calcular)
-                                  const comProfParceirasExib = comProfParceiras || (((profParcBase * percProfParceiras) / 100) + metasTotal);
+          const comProfParceirasExib = comProfParceiras || ((profParcBase * percProfParceiras) / 100);
 
                                   return (
                                     <tr key={v?.id || v?.nome}>
@@ -2559,7 +2909,6 @@ const MetaLojas: React.FC = () => {
                                 <tr>
                                   <th>Nome</th>
                                   <th>Bijou / Make / Bolsas</th>
-                                  <th>% Comissão</th>
                                   <th>Comissão (R$)</th>
                                   <th>Qtd Metas</th>
                                   <th>Total Comissão</th>
@@ -2572,16 +2921,23 @@ const MetaLojas: React.FC = () => {
                                     const c = mp?.valorComissao != null ? mp.valorComissao : (qv >= qm ? (vv * p) / 100 : 0);
                                     return acc + c;
                                   }, 0);
+                                  // Calcular Total Final (fallback) conforme regras da tela de cadastro
                                   const bijouValor = Number(vb?.bijouMakeBolsas ?? vb?.bijou_make_bolsas ?? 0);
-                                  const perc = Number(vb?.percentualComissaoBijou ?? vb?.percentual_comissao_bijou ?? 0);
-                                  const bijouComissao = (bijouValor * perc) / 100;
-                                  const total = metasTotal + bijouComissao;
+                                  const filialValor = Number(vb?.valorTotalBijouFilial ?? vb?.valor_total_bijou_filial ?? 0);
+                                  const bijouSecValor = Number(vb?.bijouMakeBolsasSecoes ?? vb?.bijou_make_bolsas_secoes ?? 0);
+                                  const filialSecValor = Number(vb?.valorTotalBijouFilialSecoes ?? vb?.valor_total_bijou_filial_secoes ?? 0);
+                                  const sobraDepto = Math.max(0, filialValor - bijouValor);
+                                  const sobraSec = Math.max(0, filialSecValor - bijouSecValor);
+                                  const totalFinalCalc = bijouValor + (sobraDepto / 2) + bijouSecValor + (sobraSec / 2);
+                                  const totalFinalDisplay = Number(vb?.totalFinal ?? vb?.total_final ?? totalFinalCalc);
+                                  // Comissão Bijou: 1% sobre o Total Final (preferir valor vindo da API, senão calcular)
+                                  const comissaoBijouDisplay = Number(vb?.valorComissaoBijou ?? vb?.valor_comissao_bijou ?? (totalFinalDisplay * 0.01));
+                                  const total = metasTotal + comissaoBijouDisplay;
                                   return (
                                     <tr key={vb?.id || vb?.nome}>
                                       <td>{vb?.nome}</td>
-                                      <td>R$ {Number(vb?.bijouMakeBolsas ?? vb?.bijou_make_bolsas ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                      <td>{Number(vb?.percentualComissaoBijou ?? vb?.percentual_comissao_bijou ?? 0)}%</td>
-                                      <td>R$ {Number(vb?.valorComissaoBijou ?? vb?.valor_comissao_bijou ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                      <td>R$ {Number(totalFinalDisplay).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                      <td>R$ {Number(comissaoBijouDisplay).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                                       <td>{(vb?.metasProdutos ?? []).length}</td>
                                       <td>R$ {Number(total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                                     </tr>
@@ -2953,7 +3309,7 @@ const MetaLojas: React.FC = () => {
                   <th>Nome Produto/Marca/Cadastro</th>
                   <th>Qtd Meta</th>
                   <th>Qtd Vendido/Completada</th>
-                  <th>%Venda/Meta</th>
+                  {tipoFuncionario !== 'vendedora' && (<th>%Venda/Meta</th>)}
                   <th>Valor Vendido/Meta</th>
                   <th>Comissão</th>
                   <th>Ações</th>
@@ -2991,17 +3347,19 @@ const MetaLojas: React.FC = () => {
                         min="0"
                       />
                     </td>
-                    <td>
-                      <Form.Control
-                        type="number"
-                        size="sm"
-                        value={meta.percentualSobreVenda}
-                        onChange={(e) => onAtualizarMeta(funcionarioId, meta.id, 'percentualSobreVenda', parseFloat(e.target.value) || 0, tipoFuncionario)}
-                        placeholder="0.00"
-                        min="0"
-                        step="0.01"
-                      />
-                    </td>
+                    {tipoFuncionario !== 'vendedora' && (
+                      <td>
+                        <Form.Control
+                          type="number"
+                          size="sm"
+                          value={meta.percentualSobreVenda}
+                          onChange={(e) => onAtualizarMeta(funcionarioId, meta.id, 'percentualSobreVenda', parseFloat(e.target.value) || 0, tipoFuncionario)}
+                          placeholder="0.00"
+                          min="0"
+                          step="0.01"
+                        />
+                      </td>
+                    )}
                     <td>
                       <Form.Control
                         type="text"

@@ -279,8 +279,8 @@ try {
 
     // Função para salvar vendedoras bijou
     function salvarVendedorasBijou($conn, $meta_id, $vendedoras_bijou) {
-        $sql = "INSERT INTO meta_loja_vendedoras_bijou (id, meta_loja_id, nome, funcao, bijou_make_bolsas, percentual_comissao_bijou, valor_comissao_bijou) 
-                VALUES (?, ?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO meta_loja_vendedoras_bijou (id, meta_loja_id, nome, funcao, bijou_make_bolsas, valor_total_bijou_filial, bijou_make_bolsas_secoes, valor_total_bijou_filial_secoes, percentual_comissao_bijou, valor_comissao_bijou) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
         
         foreach ($vendedoras_bijou as $vendedora) {
@@ -288,6 +288,9 @@ try {
             
             // Mapeamento para aceitar tanto camelCase quanto snake_case
             $bijouMakeBolsas = $vendedora->bijouMakeBolsas ?? $vendedora->bijou_make_bolsas ?? 0;
+            $valorTotalBijouFilial = $vendedora->valorTotalBijouFilial ?? $vendedora->valor_total_bijou_filial ?? 0;
+            $bijouMakeBolsasSecoes = $vendedora->bijouMakeBolsasSecoes ?? $vendedora->bijou_make_bolsas_secoes ?? 0;
+            $valorTotalBijouFilialSecoes = $vendedora->valorTotalBijouFilialSecoes ?? $vendedora->valor_total_bijou_filial_secoes ?? 0;
             $percentualComissaoBijou = $vendedora->percentualComissaoBijou ?? $vendedora->percentual_comissao_bijou ?? 0;
             $valorComissaoBijou = $vendedora->valorComissaoBijou ?? $vendedora->valor_comissao_bijou ?? 0;
             
@@ -296,8 +299,11 @@ try {
             $stmt->bindValue(3, $vendedora->nome ?? '');
             $stmt->bindValue(4, $vendedora->funcao ?? 'VENDEDORA BIJOU/MAKE/BOLSAS');
             $stmt->bindValue(5, converterValorMonetario($bijouMakeBolsas));
-            $stmt->bindValue(6, is_numeric($percentualComissaoBijou) ? (float)$percentualComissaoBijou : 0);
-            $stmt->bindValue(7, converterValorMonetario($valorComissaoBijou));
+            $stmt->bindValue(6, converterValorMonetario($valorTotalBijouFilial));
+            $stmt->bindValue(7, converterValorMonetario($bijouMakeBolsasSecoes));
+            $stmt->bindValue(8, converterValorMonetario($valorTotalBijouFilialSecoes));
+            $stmt->bindValue(9, is_numeric($percentualComissaoBijou) ? (float)$percentualComissaoBijou : 0);
+            $stmt->bindValue(10, converterValorMonetario($valorComissaoBijou));
             $stmt->execute();
             
             // Salvar metas de produtos da vendedora bijou

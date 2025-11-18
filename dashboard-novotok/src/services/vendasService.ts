@@ -183,6 +183,41 @@ export const listarVendasTotais = async (params: any) => {
   return response.data;
 };
 
+// Obter venda total por igualdade de período e codusur
+export const obterVendaTotal = async (codusur: string, dataInicio: string, dataFim: string) => {
+  try {
+    const response = await api.get('/obter_venda_total.php', {
+      params: {
+        codusur,
+        data_inicio: dataInicio,
+        data_fim: dataFim
+      }
+    });
+    return response.data;
+  } catch (err: any) {
+    // Fallback: usar listar_vendas_totais e selecionar por igualdade
+    try {
+      const response2 = await api.get('/listar_vendas_totais.php', {
+        params: {
+          codusur,
+          data_inicio: dataInicio,
+          data_fim: dataFim
+        }
+      });
+      const lista = response2.data?.vendas_totais || [];
+      const toISO = (brDate: string) => {
+        const [d, m, y] = (brDate || '').split('/');
+        if (!d || !m || !y) return brDate;
+        return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+      };
+      const match = lista.find((v: any) => v?.codusur === codusur && toISO(v?.data_inicio) === dataInicio && toISO(v?.data_fim) === dataFim);
+      return { success: !!match, venda_total: match || null };
+    } catch (e) {
+      throw e;
+    }
+  }
+};
+
 export const atualizarVendaTotal = async (vendaTotal: VendaTotal) => {
   const response = await api.post('/atualizar_venda_total.php', vendaTotal);
   return response.data;
@@ -609,6 +644,7 @@ const vendasService = {
   deletarMeta,
   obterProgressoMeta,
   calcularTotaisVendas,
+  obterVendaTotal,
   debugVendas,
   listarDepartamentos,
   cadastrarDepartamento,
@@ -630,4 +666,4 @@ const vendasService = {
   exportarRelatorioVendasExcel
 };
 
-export default vendasService; 
+export default vendasService;

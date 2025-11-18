@@ -5,6 +5,9 @@ import VendasTotais from './VendasTotais';
 import VendasFiltros from './VendasFiltros';
 import VendasMetas from './VendasMetas';
 import { debugVendas } from '../services/vendasService';
+import BijouMakeBolsaConfig from './BijouMakeBolsaConfig';
+import BijouSecoesFiltrosConfig from './BijouSecoesFiltrosConfig';
+import BijouSecoesFiltrosVendedor from './BijouSecoesFiltrosVendedor';
 
 const Vendas: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('diarias');
@@ -50,7 +53,16 @@ const Vendas: React.FC = () => {
             <Nav.Link eventKey="metas">Metas</Nav.Link>
           </Nav.Item>
           <Nav.Item>
-            <Nav.Link eventKey="filtros">Configurar Filtros</Nav.Link>
+            <Nav.Link eventKey="filtros">Configurar Filtros Dep/Sec.: Vendedoras</Nav.Link>
+          </Nav.Item>
+           <Nav.Item>
+            <Nav.Link eventKey="bijou_secoes_filtros_vendedor">Configurar Filtros Sec. Bijou: Vendedoras</Nav.Link>
+          </Nav.Item>
+          <Nav.Item>
+            <Nav.Link eventKey="bijou_config">Configurar Filtros Dep. Bijou: Filial</Nav.Link>
+          </Nav.Item>
+          <Nav.Item>
+            <Nav.Link eventKey="bijou_secoes_filtros">Configurar Filtros Sec. Bijou: Filial</Nav.Link>
           </Nav.Item>
         </Nav>
         <Tab.Content>
@@ -65,6 +77,15 @@ const Vendas: React.FC = () => {
           </Tab.Pane>
           <Tab.Pane eventKey="filtros">
             <VendasFiltros />
+          </Tab.Pane>
+          <Tab.Pane eventKey="bijou_config">
+            <BijouMakeBolsaConfig />
+          </Tab.Pane>
+          <Tab.Pane eventKey="bijou_secoes_filtros">
+            <BijouSecoesFiltrosConfig />
+          </Tab.Pane>
+          <Tab.Pane eventKey="bijou_secoes_filtros_vendedor">
+            <BijouSecoesFiltrosVendedor />
           </Tab.Pane>
         </Tab.Content>
       </Tab.Container>
@@ -106,4 +127,4 @@ const Vendas: React.FC = () => {
   );
 };
 
-export default Vendas; 
+export default Vendas;

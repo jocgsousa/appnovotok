@@ -854,6 +854,10 @@ CREATE TABLE IF NOT EXISTS meta_loja_vendedoras_bijou (
     nome VARCHAR(100) NOT NULL,
     funcao VARCHAR(50) NOT NULL DEFAULT 'VENDEDORA BIJOU/MAKE/BOLSAS',
     bijou_make_bolsas DECIMAL(15,2) NOT NULL DEFAULT 0,
+    valor_total_bijou_filial DECIMAL(15,2) NOT NULL DEFAULT 0,
+    -- Novos totais por seções para cálculo e exibição no dashboard
+    bijou_make_bolsas_secoes DECIMAL(15,2) NOT NULL DEFAULT 0,
+    valor_total_bijou_filial_secoes DECIMAL(15,2) NOT NULL DEFAULT 0,
     percentual_comissao_bijou DECIMAL(5,2) NOT NULL DEFAULT 0,
     valor_comissao_bijou DECIMAL(15,2) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -950,3 +954,110 @@ CREATE INDEX idx_meta_loja_campanhas_meta_id ON meta_loja_campanhas(meta_loja_id
 CREATE INDEX idx_meta_loja_produtos_meta_id ON meta_loja_produtos(meta_loja_id);
 CREATE INDEX idx_meta_loja_produtos_funcionario ON meta_loja_produtos(funcionario_id, tipo_funcionario);
 CREATE INDEX idx_meta_loja_funcionarios_meta_id ON meta_loja_funcionarios(meta_loja_id);
+-- =============================================
+-- NOVA TABELA: Totais de Bijou/Make/Bolsas por Filial
+-- Usada pelo sincronizador para armazenar o valor total mensal
+-- (parametrizado por departamentos/seções) por filial.
+-- =============================================
+CREATE TABLE IF NOT EXISTS bijou_filial_totais (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  filial_id INT NOT NULL,
+  codfilial VARCHAR(20) NOT NULL,
+  mes INT NOT NULL,
+  ano INT NOT NULL,
+  data_inicio DATE NOT NULL,
+  data_fim DATE NOT NULL,
+  valor_total DECIMAL(14,2) NOT NULL DEFAULT 0,
+  config_key VARCHAR(100) NOT NULL,
+  departamentos VARCHAR(255) DEFAULT NULL,
+  secoes VARCHAR(255) DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_bijou_filial_totais_filial FOREIGN KEY (filial_id) REFERENCES filiais(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_bijou_filial_period (filial_id, mes, ano, config_key)
+);
+
+-- =============================================
+-- NOVA TABELA: Configuração Bijou/Make/Bolsas por Filial
+-- Define, por filial, quais departamentos/seções compõem Bijou/Make/Bolsas
+-- Será utilizada pelo dashboard e pelo sincronizador de vendas
+-- =============================================
+CREATE TABLE IF NOT EXISTS bijou_filial_config (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  filial_id INT NOT NULL,
+  departamentos VARCHAR(255) DEFAULT NULL, -- CSV de códigos de departamentos (ex: '25,24,4')
+  secoes VARCHAR(255) DEFAULT NULL,        -- CSV de códigos de seções (ex: '048,050')
+  ativo TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_bijou_filial_config_filial FOREIGN KEY (filial_id) REFERENCES filiais(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_bijou_filial_config_filial (filial_id)
+);
+
+-- =============================================
+-- NOVAS TABELAS: Configuração e Totais por Seções
+-- 1) bijou_filial_secoes_config: filtros por filial (seções/departamentos)
+-- 2) bijou_filial_secoes_totais: totais mensais por filial (mesmo esquema de bijou_filial_totais)
+-- 3) bijou_vendedor_secoes_config: filtros por vendedor (seções/departamentos)
+-- 4) bijou_vendedor_secoes_totais: totais mensais por vendedor
+-- =============================================
+
+-- Configuração de seções por filial (usa campos maiores para CSV conforme API)
+CREATE TABLE IF NOT EXISTS bijou_filial_secoes_config (
+  filial_id INT NOT NULL PRIMARY KEY,
+  departamentos VARCHAR(1000) DEFAULT NULL,
+  secoes VARCHAR(2000) DEFAULT NULL,
+  ativo TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_bijou_filial_secoes_config_filial FOREIGN KEY (filial_id) REFERENCES filiais(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Totais de seções por filial (estrutura espelhada de bijou_filial_totais)
+CREATE TABLE IF NOT EXISTS bijou_filial_secoes_totais (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  filial_id INT NOT NULL,
+  codfilial VARCHAR(20) NOT NULL,
+  mes INT NOT NULL,
+  ano INT NOT NULL,
+  data_inicio DATE NOT NULL,
+  data_fim DATE NOT NULL,
+  valor_total DECIMAL(14,2) NOT NULL DEFAULT 0,
+  config_key VARCHAR(100) NOT NULL,
+  departamentos VARCHAR(255) DEFAULT NULL,
+  secoes VARCHAR(255) DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_bijou_filial_secoes_totais_filial FOREIGN KEY (filial_id) REFERENCES filiais(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_bijou_filial_secoes_period (filial_id, mes, ano, config_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Configuração de seções por vendedor
+CREATE TABLE IF NOT EXISTS bijou_vendedor_secoes_config (
+  vendedor_id INT NOT NULL PRIMARY KEY,
+  departamentos VARCHAR(1000) DEFAULT NULL,
+  secoes VARCHAR(2000) DEFAULT NULL,
+  ativo TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_bijou_vendedor_secoes_config_vendedor FOREIGN KEY (vendedor_id) REFERENCES vendedores(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Totais de seções por vendedor
+CREATE TABLE IF NOT EXISTS bijou_vendedor_secoes_totais (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  vendedor_id INT NOT NULL,
+  codusur VARCHAR(20) NOT NULL,
+  mes INT NOT NULL,
+  ano INT NOT NULL,
+  data_inicio DATE NOT NULL,
+  data_fim DATE NOT NULL,
+  valor_total DECIMAL(14,2) NOT NULL DEFAULT 0,
+  config_key VARCHAR(100) NOT NULL,
+  departamentos VARCHAR(255) DEFAULT NULL,
+  secoes VARCHAR(255) DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_bijou_vendedor_secoes_totais_vendedor FOREIGN KEY (vendedor_id) REFERENCES vendedores(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_bijou_vendedor_secoes_period (vendedor_id, mes, ano, config_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -109,6 +109,13 @@ function main() {
             $actions[] = ['table' => 'meta_loja_vendedoras_bijou', 'action' => 'MODIFY COLUMN', 'column' => 'bijou_make_bolsas', 'definition' => 'DECIMAL(15,2) NOT NULL DEFAULT 0'];
         }
 
+        // Nova coluna para total de bijou da filial por vendedora bijou
+        addColumnIfMissing($conn, 'meta_loja_vendedoras_bijou', 'valor_total_bijou_filial', 'DECIMAL(15,2) NOT NULL DEFAULT 0', $actions);
+
+        // Novas colunas para totais por seções (vendedora e filial)
+        addColumnIfMissing($conn, 'meta_loja_vendedoras_bijou', 'bijou_make_bolsas_secoes', 'DECIMAL(15,2) NOT NULL DEFAULT 0', $actions);
+        addColumnIfMissing($conn, 'meta_loja_vendedoras_bijou', 'valor_total_bijou_filial_secoes', 'DECIMAL(15,2) NOT NULL DEFAULT 0', $actions);
+
         addColumnIfMissing($conn, 'meta_loja_campanhas', 'descricao', 'TEXT', $actions);
 
         migrateTipoFuncionarioEnum($conn, $actions);

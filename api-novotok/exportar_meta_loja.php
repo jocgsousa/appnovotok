@@ -140,7 +140,7 @@ try {
     }
 
     $vendedoras_bijou = [];
-    $stmt = $conn->prepare("SELECT id, nome, funcao, bijou_make_bolsas, percentual_comissao_bijou, valor_comissao_bijou FROM meta_loja_vendedoras_bijou WHERE meta_loja_id = ?");
+    $stmt = $conn->prepare("SELECT id, nome, funcao, bijou_make_bolsas, valor_total_bijou_filial, bijou_make_bolsas_secoes, valor_total_bijou_filial_secoes, percentual_comissao_bijou, valor_comissao_bijou FROM meta_loja_vendedoras_bijou WHERE meta_loja_id = ?");
     $stmt->bindValue(1, $meta_id);
     $stmt->execute();
     while ($vb = $stmt->fetch(PDO::FETCH_ASSOC)) {

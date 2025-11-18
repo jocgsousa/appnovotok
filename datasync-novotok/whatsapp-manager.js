@@ -147,9 +147,20 @@ async function testDatabaseConnection() {
 // Função para atualizar status da instância via API
 async function updateInstanceStatus(instanceId, status, qrcode = null, numero = null) {
     try {
-        const updateData = {
-            status_conexao: status
-        };
+        // Verificar existência da instância antes de atualizar status
+        let exists = true;
+        try {
+            const inst = await whatsappAPI.getById(instanceId);
+            exists = !!inst;
+        } catch (_) {
+            exists = false;
+        }
+        if (!exists) {
+            console.warn(`⚠️ Instância ${instanceId} não encontrada. Status '${status}' não será atualizado.`);
+            return;
+        }
+
+        const updateData = { status_conexao: status };
 
         if (qrcode !== null) {
             updateData.qrcode = qrcode;
@@ -164,11 +175,19 @@ async function updateInstanceStatus(instanceId, status, qrcode = null, numero = 
             updateData.ultima_conexao = new Date().toISOString().slice(0, 19).replace('T', ' ');
         }
 
-        await whatsappAPI.updateStatus(instanceId, updateData);
-        
-        // Status atualizado via API - dashboard fará polling para obter atualizações
-
-        console.log(`Status da instância ${instanceId} atualizado para: ${status}`);
+        try {
+            await whatsappAPI.updateStatus(instanceId, updateData);
+            
+            // Status atualizado via API - dashboard fará polling para obter atualizações
+            console.log(`Status da instância ${instanceId} atualizado para: ${status}`);
+        } catch (apiErr) {
+            const is404 = apiErr?.response?.status === 404 || /404/.test(apiErr?.message || '');
+            if (is404) {
+                console.warn(`⚠️ API retornou 404 ao atualizar status da instância ${instanceId}. Ignorando atualização.`);
+                return;
+            }
+            throw apiErr;
+        }
     } catch (error) {
         console.error('Erro ao atualizar status da instância:', error);
     }
@@ -185,29 +204,61 @@ function createSessionDir(instanceId) {
 async function cleanLockedSession(instanceId) {
     try {
         const sessionPath = path.join(__dirname, 'sessions', `instance_${instanceId}`);
-        
+        const nestedSessionPath = path.join(sessionPath, `session-instance_${instanceId}`);
+        const defaultProfilePath = path.join(nestedSessionPath, 'Default');
+
         if (fs.existsSync(sessionPath)) {
             console.log(`🧹 Limpando sessão bloqueada da instância ${instanceId}...`);
-            
-            // Tentar remover diretório de sessão com força
+
+            let cleaned = false;
+            // Tentativa 1: remover toda a pasta de sessão
             try {
                 fs.removeSync(sessionPath);
+                cleaned = true;
                 console.log(`✅ Sessão da instância ${instanceId} removida com sucesso`);
             } catch (removeError) {
-                console.log(`⚠️ Não foi possível remover sessão da instância ${instanceId}, tentando renomear...`);
-                
-                // Se não conseguir remover, tentar renomear para backup
+                console.log(`⚠️ Remoção direta falhou (${removeError.message}). Tentando renomear pasta raiz...`);
+                // Tentativa 2: renomear pasta raiz
                 const backupPath = `${sessionPath}_backup_${Date.now()}`;
                 try {
                     fs.moveSync(sessionPath, backupPath);
-                    console.log(`✅ Sessão da instância ${instanceId} movida para backup`);
-                } catch (moveError) {
-                    console.log(`⚠️ Não foi possível mover sessão da instância ${instanceId}, continuando mesmo assim...`);
+                    cleaned = true;
+                    console.log(`✅ Pasta raiz movida para backup: ${backupPath}`);
+                } catch (moveRootError) {
+                    console.log(`⚠️ Não foi possível mover pasta raiz (${moveRootError.message}). Tentando renomear subpasta de sessão...`);
+                    // Tentativa 3: renomear subpasta de sessão
+                    if (fs.existsSync(nestedSessionPath)) {
+                        const nestedBackup = `${nestedSessionPath}_backup_${Date.now()}`;
+                        try {
+                            fs.moveSync(nestedSessionPath, nestedBackup);
+                            cleaned = true;
+                            console.log(`✅ Subpasta de sessão movida para backup: ${nestedBackup}`);
+                        } catch (moveNestedError) {
+                            console.log(`⚠️ Não foi possível mover subpasta de sessão (${moveNestedError.message}). Tentando remover arquivos problemáticos...`);
+                            // Tentativa 4: remover arquivos problemáticos específicos
+                            const problematicFiles = ['Cookies', 'chrome_debug.log'];
+                            for (const fname of problematicFiles) {
+                                const fpath = path.join(defaultProfilePath, fname);
+                                try {
+                                    if (fs.existsSync(fpath)) {
+                                        fs.removeSync(fpath);
+                                        console.log(`🗑️ Arquivo problemático removido: ${fname}`);
+                                    }
+                                } catch (fileErr) {
+                                    console.log(`⚠️ Falha ao remover ${fname}: ${fileErr.message}`);
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            
+
             // Aguardar um pouco para o sistema liberar os recursos
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 1200));
+
+            if (!cleaned) {
+                console.log(`⚠️ Sessão não pôde ser totalmente limpa. Prosseguindo com recriação usando pasta fresca.`);
+            }
         }
     } catch (error) {
         console.error(`Erro ao limpar sessão da instância ${instanceId}:`, error.message);
@@ -220,41 +271,27 @@ async function createWhatsAppInstance(instanceData) {
     const { id, identificador, nome } = instanceData;
     
     try {
+        // Evitar criação de chrome_debug.log que pode causar EBUSY no Windows
+        if (process.platform === 'win32') {
+            try { process.env.CHROME_LOG_FILE = 'NUL'; } catch (_) {}
+        }
         console.log(`🏗️ Iniciando criação da instância ${identificador} (ID: ${id})`);
         
-        // Criar diretório de sessão
+        // Criar diretório de sessão base
         console.log(`📁 Criando diretório de sessão para instância ${id}...`);
-        const sessionPath = createSessionDir(id);
-        console.log(`✅ Diretório de sessão criado: ${sessionPath}`);
+        const baseSessionPath = createSessionDir(id);
+        console.log(`✅ Diretório de sessão criado: ${baseSessionPath}`);
+        let currentSessionPath = baseSessionPath;
         
-        // Atualizar caminho da sessão via API
+        // Atualizar caminho da sessão via API inicialmente
         console.log(`🔄 Atualizando caminho da sessão via API para instância ${id}...`);
         await whatsappAPI.updateStatus(id, {
-            session_path: sessionPath
+            session_path: currentSessionPath
         });
         console.log(`✅ Caminho da sessão atualizado via API`);
 
-        // Configurar cliente WhatsApp
-        const client = new Client({
-            authStrategy: new LocalAuth({
-                clientId: `instance_${id}`,
-                dataPath: sessionPath
-            }),
-            puppeteer: {
-                headless: true,
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--no-first-run',
-                    '--no-zygote',
-                    '--disable-gpu'
-                ]
-            }
-        });
-
-        // Event listeners
+        // Event listeners (serão associados ao client efetivo)
+        const attachListeners = (client) => {
         client.on('qr', async (qr) => {
             console.log(`QR Code gerado para instância ${identificador}`);
             await updateInstanceStatus(id, 'qr_code', qr);
@@ -294,6 +331,7 @@ async function createWhatsAppInstance(instanceData) {
             console.log(`Mensagem excluída para todos na instância ${identificador}`);
             await handleMessageRevoked(id, after, before);
         });
+        };
 
         // Inicializar cliente
         console.log(`🔄 Atualizando status para 'conectando' para instância ${id}...`);
@@ -301,16 +339,70 @@ async function createWhatsAppInstance(instanceData) {
         console.log(`✅ Status atualizado para 'conectando'`);
         
         console.log(`🚀 Inicializando cliente WhatsApp para instância ${id}...`);
-        await client.initialize();
-        console.log(`✅ Cliente WhatsApp inicializado com sucesso para instância ${id}`);
+        // Tentar inicializar com tolerância a bloqueios de arquivos (Windows EBUSY)
+        let initAttempt = 0;
+        let client;
+        while (true) {
+            // Criar um client novo a cada tentativa, permitindo mudar o dataPath se necessário
+            client = new Client({
+                authStrategy: new LocalAuth({
+                    clientId: `instance_${id}`,
+                    dataPath: currentSessionPath
+                }),
+                puppeteer: {
+                    headless: 'new',
+                    executablePath: (() => { try { return require('puppeteer').executablePath(); } catch (_) { return undefined; } })(),
+                    args: [
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-accelerated-2d-canvas',
+                        '--no-first-run',
+                        '--no-zygote',
+                        '--use-gl=swiftshader',
+                        '--start-maximized',
+                        '--disable-background-timer-throttling',
+                        '--disable-renderer-backgrounding',
+                        '--disable-backgrounding-occluded-windows',
+                        '--enable-logging=stderr'
+                    ]
+                }
+            });
+            attachListeners(client);
+
+            try {
+                await client.initialize();
+                console.log(`✅ Cliente WhatsApp inicializado com sucesso para instância ${id}`);
+                // Se o caminho de sessão foi modificado em relação ao base, atualizar API
+                if (currentSessionPath !== baseSessionPath) {
+                    console.log(`🔄 Atualizando caminho de sessão final na API: ${currentSessionPath}`);
+                    await whatsappAPI.updateStatus(id, { session_path: currentSessionPath });
+                    console.log(`✅ Caminho de sessão final atualizado na API`);
+                }
+                break;
+            } catch (err) {
+                const msg = err?.message || String(err);
+                if ((msg.includes('EBUSY') || msg.includes('resource busy or locked')) && initAttempt < 2) {
+                    initAttempt++;
+                    console.warn(`⚠️ Inicialização falhou por arquivo bloqueado (tentativa ${initAttempt}). Limpando sessão e reintentando...`);
+                    try { await cleanLockedSession(id); } catch (_) {}
+                    // Em nova tentativa, usar uma pasta fresca para evitar arquivos remanescentes
+                    currentSessionPath = path.join(__dirname, 'sessions', `instance_${id}_fresh_${Date.now()}`);
+                    fs.ensureDirSync(currentSessionPath);
+                    console.log(`📁 Usando pasta de sessão alternativa: ${currentSessionPath}`);
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    // Tentar novamente com novo dataPath
+                    continue;
+                }
+                // Tentar destruir client antes de propagar
+                try { await client.destroy(); } catch (_) {}
+                throw err;
+            }
+        }
         
         // Armazenar instância ativa
         console.log(`💾 Armazenando instância ${id} no cache...`);
-        activeInstances.set(id, {
-            client,
-            instanceData,
-            status: 'conectando'
-        });
+        activeInstances.set(id, { client, instanceData, status: 'conectando', sessionPath: currentSessionPath });
         console.log(`✅ Instância ${id} armazenada no cache. Total no cache: ${activeInstances.size}`);
 
         return client;
@@ -817,10 +909,21 @@ async function sendNPSButtons(instanceId, to, message, title = 'Pesquisa de Sati
 // Função para limpar pasta de sessão de uma instância
 async function cleanupInstanceSession(instanceId) {
     try {
-        const sessionPath = path.join(__dirname, 'sessions', `instance_${instanceId}`);
-        if (await fs.pathExists(sessionPath)) {
-            await fs.remove(sessionPath);
-            console.log(`Pasta de sessão removida: ${sessionPath}`);
+        // Preferir caminho atual da instância no cache (suporta pastas alternativas fresh_*)
+        const cached = activeInstances.get(instanceId);
+        const cachedPath = cached?.instanceData?.session_path || cached?.sessionPath;
+        const defaultPath = path.join(__dirname, 'sessions', `instance_${instanceId}`);
+        const pathsToTry = Array.from(new Set([cachedPath, defaultPath].filter(Boolean)));
+
+        for (const p of pathsToTry) {
+            try {
+                if (await fs.pathExists(p)) {
+                    await fs.remove(p);
+                    console.log(`Pasta de sessão removida: ${p}`);
+                }
+            } catch (innerErr) {
+                console.warn(`Falha ao remover pasta ${p}: ${innerErr.message}`);
+            }
         }
     } catch (error) {
         console.error(`Erro ao remover pasta da instância ${instanceId}:`, error);
@@ -974,6 +1077,13 @@ async function checkNewInstances() {
                 
                 try {
                     console.log(`🔄 Inicializando nova instância ${instance.identificador} (ID: ${instance.id})...`);
+                    
+                    // Confirmar que a instância ainda existe no banco (evita 404 intermitente)
+                    const existsNow = await whatsappAPI.getById(instance.id).catch(() => null);
+                    if (!existsNow) {
+                        console.log(`⚠️ Instância ${instance.identificador} (ID: ${instance.id}) não encontrada na API. Pulando inicialização.`);
+                        continue;
+                    }
                     
                     // Limpar sessão bloqueada se existir
                     await cleanLockedSession(instance.id);
@@ -1164,13 +1274,15 @@ async function loadAllInstances() {
         for (const instance of instances) {
             try {
                 console.log(`🔄 Inicializando instância ${instance.identificador}...`);
+                // Limpar sessão bloqueada antes da criação para evitar EBUSY em Windows
+                await cleanLockedSession(instance.id);
                 await createWhatsAppInstance(instance);
                 
                 // Aguardar um pouco entre as inicializações para evitar sobrecarga
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 
-                // Validar se a instância foi carregada corretamente
-                const validation = await validateInstanceForSending(instance.identificador);
+                // Validar se a instância foi carregada corretamente (usa ID numérico)
+                const validation = await validateInstanceForSending(instance.id);
                 if (validation.ready) {
                     console.log(`✅ Instância ${instance.identificador} carregada e pronta`);
                 } else {
@@ -1241,6 +1353,8 @@ app.post('/api/instances/:id/restart', async (req, res) => {
         console.log(`🚀 Criando nova instância WhatsApp ${instanceId} (${instance.identificador})...`);
         
         try {
+            // Limpar sessão possivelmente bloqueada antes de recriar
+            await cleanLockedSession(instanceId);
             const newClient = await createWhatsAppInstance(instance);
             console.log(`✨ Instância ${instanceId} (${instance.identificador}) reiniciada com sucesso!`);
             console.log(`📊 Status final no cache:`, activeInstances.has(instanceId) ? 'PRESENTE' : 'AUSENTE');

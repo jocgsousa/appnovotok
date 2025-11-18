@@ -89,12 +89,26 @@ try {
         $params[] = $caixa;
     }
 
-    // Filtrar por status de cancelamento
+    // Filtrar por status de cancelamento (aceita múltiplos nomes para compatibilidade)
     if (!empty($status_cancelamento) && $status_cancelamento !== 'todos') {
-        if ($status_cancelamento === 'com_cancelamento') {
-            $query .= " AND (p.cancelados IS NOT NULL AND p.cancelados != '' AND p.cancelados != '[]')";
-        } elseif ($status_cancelamento === 'sem_cancelamento') {
-            $query .= " AND (p.cancelados IS NULL OR p.cancelados = '' OR p.cancelados = '[]')";
+        switch ($status_cancelamento) {
+            // Sem cancelamentos
+            case 'sem_cancelados':
+            case 'sem_cancelamentos':
+            case 'sem_cancelamento':
+                $query .= " AND ( (p.cancelados IS NULL OR p.cancelados = '' OR p.cancelados = '[]') AND (p.total_cancelados IS NULL OR p.total_cancelados = 0) )";
+                break;
+            // Com cancelamentos parciais
+            case 'com_cancelados':
+            case 'com_cancelamentos':
+            case 'com_cancelamento':
+                $query .= " AND ( (p.cancelados IS NOT NULL AND p.cancelados != '' AND p.cancelados != '[]') OR (p.total_cancelados > 0) )";
+                break;
+            // Apenas cancelados (pedido totalmente cancelado)
+            case 'apenas_cancelados':
+            case 'cancelados':
+                $query .= " AND ( (p.cancelados IS NOT NULL AND p.cancelados != '' AND p.cancelados != '[]') AND (p.itens IS NULL OR p.itens = '' OR p.itens = '[]') )";
+                break;
         }
     }
 
@@ -157,12 +171,13 @@ try {
     // Calcular número total de páginas
     $total_pages = ceil($total / $per_page);
 
-    // Retornar resposta
+    // Retornar resposta (inclui total em dois formatos para compatibilidade)
     echo json_encode([
         'success' => true,
         'data' => $pedidos,
         'pagination' => [
-            'total' => (int)$total,
+            'total' => (int)$total, // legado
+            'total_records' => (int)$total, // esperado pelo dashboard
             'total_pages' => (int)$total_pages,
             'current_page' => (int)$page,
             'per_page' => (int)$per_page
