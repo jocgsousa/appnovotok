@@ -1,5 +1,5 @@
 require('dotenv/config');
-const { Client, LocalAuth, Buttons } = require('whatsapp-web.js');
+const { Client, LocalAuth } = require('whatsapp-web.js');
 const fs = require('fs-extra');
 const path = require('path');
 const express = require('express');
@@ -416,6 +416,20 @@ async function createWhatsAppInstance(instanceData) {
 // Cache para evitar processamento de mensagens duplicadas
 const processedMessages = new Map();
 
+// Idempotency cache for outgoing sends (prevents duplicate sending)
+const outgoingIdempotency = new Map(); // key -> { timestamp, response }
+const IDEMPOTENCY_TTL_MS = 60 * 60 * 1000; // 1 hour TTL
+
+// Cleanup expired idempotency entries periodically
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of outgoingIdempotency.entries()) {
+        if (!entry || !entry.timestamp || (now - entry.timestamp) > IDEMPOTENCY_TTL_MS) {
+            outgoingIdempotency.delete(key);
+        }
+    }
+}, 30 * 60 * 1000); // every 30 minutes
+
 // Função para lidar com mensagens excluídas
 async function handleMessageRevoked(instanceId, after, before) {
     try {
@@ -774,137 +788,6 @@ async function sendMediaMessage(instanceId, to, message, media) {
     }
 }
 
-// Função para enviar botões interativos NPS (0 a 10)
-async function sendNPSButtons(instanceId, to, message, title = 'Pesquisa de Satisfação', footer = 'Selecione sua nota abaixo') {
-    console.log(`🔍 Verificando instância ${instanceId} para envio de botões NPS...`);
-    
-    let instance = activeInstances.get(instanceId);
-    
-    // Se a instância não existe, tentar carregá-la
-    if (!instance || !instance.client) {
-        console.log(`⚠️ Instância ${instanceId} não encontrada no cache. Tentando carregar...`);
-        
-        try {
-            // Buscar dados da instância na API
-            const instanceData = await whatsappAPI.getById(instanceId);
-            
-            if (!instanceData) {
-                throw new Error(`Instância ${instanceId} não encontrada na base de dados`);
-            }
-            
-            if (instanceData.status_conexao !== 'ativa') {
-                throw new Error(`Instância ${instanceId} não está ativa. Status: ${instanceData.status_conexao}`);
-            }
-            
-            // Tentar criar/carregar a instância
-            console.log(`🔄 Carregando instância ${instanceId}...`);
-            await createWhatsAppInstance(instanceData);
-            
-            // Aguardar um momento para a instância inicializar
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            
-            // Tentar novamente obter a instância
-            instance = activeInstances.get(instanceId);
-            
-            if (!instance || !instance.client) {
-                throw new Error(`Falha ao carregar instância ${instanceId}`);
-            }
-        } catch (loadError) {
-            console.error(`❌ Erro ao carregar instância ${instanceId}:`, loadError.message);
-            throw new Error(`Instância ${instanceId} não encontrada ou não pôde ser carregada: ${loadError.message}`);
-        }
-    }
-
-    // Verificar se a instância está realmente conectada
-    try {
-        const state = await instance.client.getState();
-        console.log(`📊 Status da instância ${instanceId}: ${state}`);
-        
-        if (state !== 'CONNECTED') {
-            // Se não está conectada, aguardar um pouco e tentar novamente
-            console.log(`⏳ Instância não conectada, aguardando conexão...`);
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            
-            const newState = await instance.client.getState();
-            if (newState !== 'CONNECTED') {
-                throw new Error(`Instância ${instanceId} não está conectada. Estado: ${newState}`);
-            }
-        }
-    } catch (stateError) {
-        console.error(`❌ Erro ao verificar estado da instância ${instanceId}:`, stateError.message);
-        throw new Error(`Falha na verificação do estado da instância: ${stateError.message}`);
-    }
-
-    // Formatar número de destino
-    const formattedTo = formatPhoneNumber(to);
-    console.log(`📱 Enviando botões NPS para: ${formattedTo}`);
-
-    try {
-        // Verificar se o número é válido
-        const numberId = await instance.client.getNumberId(formattedTo);
-        if (!numberId) {
-            // Número inválido, não tentar fallback
-            throw new Error(`Número ${formattedTo} não possui conta WhatsApp ativa`);
-        }
-
-        // Criar botões de 0 a 10 para NPS
-        const npsButtons = [];
-        for (let i = 0; i <= 10; i++) {
-            npsButtons.push({ body: i.toString() });
-        }
-
-        // Criar objeto Buttons
-        const buttons = new Buttons(
-            message,
-            npsButtons,
-            title,
-            footer
-        );
-
-        // Enviar botões
-        const result = await instance.client.sendMessage(numberId._serialized, buttons);
-        console.log(`✅ Botões NPS enviados com sucesso para ${formattedTo}`);
-        console.log(`📄 ID da mensagem: ${result.id._serialized}`);
-        
-        return {
-            success: true,
-            messageId: result.id._serialized,
-            to: formattedTo,
-            timestamp: new Date().toISOString()
-        };
-        
-    } catch (error) {
-        console.error(`❌ Erro ao enviar botões NPS para ${formattedTo}:`, error.message);
-        
-        // Se o erro for relacionado ao número inválido, não tentar fallback
-        if (error.message.includes('não possui conta WhatsApp')) {
-            throw error;
-        }
-        
-        // Para outros erros, tentar método alternativo (mensagem de texto simples)
-        console.log(`🔄 Tentando método alternativo (texto simples)...`);
-        try {
-            const fallbackMessage = `${message}\n\n` +
-                'Por favor, responda com um número de 0 a 10:\n' +
-                '0️⃣ 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣ 8️⃣ 9️⃣ 🔟\n\n' +
-                'Digite apenas o número (exemplo: 8)';
-            
-            const fallbackResult = await instance.client.sendMessage(formattedTo, fallbackMessage);
-            console.log(`✅ Mensagem NPS alternativa enviada com sucesso para ${formattedTo}`);
-            
-            return {
-                success: true,
-                messageId: fallbackResult.id._serialized,
-                to: formattedTo,
-                timestamp: new Date().toISOString(),
-                fallback: true
-            };
-        } catch (alternativeError) {
-            console.error('Método alternativo de botões também falhou:', alternativeError);
-            throw new Error(`Falha ao enviar botões NPS: ${error.message}`);
-        }
-    }
-}
 
 // Função para limpar pasta de sessão de uma instância
 async function cleanupInstanceSession(instanceId) {
@@ -930,6 +813,53 @@ async function cleanupInstanceSession(instanceId) {
     }
 }
 
+// Helper para destruir cliente de forma segura (evita falhas "Target closed")
+async function safeDestroyClient(client) {
+    if (!client) return;
+    try {
+        const page = client.pupPage;
+        // Se a página já estiver fechada, evite chamar destroy() que pode avaliar no contexto
+        const isClosed = !!(page && typeof page.isClosed === 'function' && page.isClosed());
+        if (isClosed) {
+            try {
+                const browser = client.pupBrowser || (typeof client.pupBrowser === 'function' ? client.pupBrowser() : null);
+                if (browser && typeof browser.close === 'function') {
+                    await browser.close().catch(() => {});
+                }
+            } catch (_) {}
+            try { client.removeAllListeners && client.removeAllListeners(); } catch (_) {}
+            await new Promise(r => setTimeout(r, 200));
+            return;
+        }
+
+        await client.destroy();
+    } catch (error) {
+        const msg = error?.message || String(error);
+        // Erros esperados quando o alvo/aba já foi fechado
+        const expected = (
+            msg.includes('Target closed') ||
+            msg.includes('Protocol error (Runtime.callFunctionOn)') ||
+            msg.includes('Session closed') ||
+            msg.includes('Target not found') ||
+            msg.includes('Browser has been closed') ||
+            msg.includes('Connection closed')
+        );
+        if (expected) {
+            console.warn(`safeDestroyClient: ignorando erro esperado ao destruir cliente: ${msg}`);
+        } else {
+            console.warn(`safeDestroyClient: erro ao destruir cliente: ${msg}`);
+        }
+        try {
+            const browser = client.pupBrowser || (typeof client.pupBrowser === 'function' ? client.pupBrowser() : null);
+            if (browser && typeof browser.close === 'function') {
+                await browser.close().catch(() => {});
+            }
+        } catch (_) {}
+    }
+    try { client.removeAllListeners && client.removeAllListeners(); } catch (_) {}
+    await new Promise(r => setTimeout(r, 200));
+}
+
 // Função para parar e limpar uma instância
 async function stopAndCleanInstance(instanceId) {
     try {
@@ -937,7 +867,7 @@ async function stopAndCleanInstance(instanceId) {
         const instance = activeInstances.get(instanceId);
         if (instance) {
             console.log(`Parando instância ${instanceId}...`);
-            await instance.client.destroy();
+            await safeDestroyClient(instance.client);
             activeInstances.delete(instanceId);
         }
         
@@ -1002,64 +932,14 @@ async function checkNewInstances() {
         
         // Obter IDs das instâncias que já estão no cache (independente do status)
         const activeInstanceIds = Array.from(activeInstances.keys());
-        
-        // Verificar instâncias que precisam ser reiniciadas (status 'conectando' no banco)
-        const instancesToRestart = [];
         const newInstances = [];
         
         for (const instance of allInstances) {
             const isInCache = activeInstanceIds.includes(instance.id);
             
-            // CASO 1: Instância com status 'conectando' no banco (restart solicitado)
-            if (instance.status_conexao === 'conectando') {
-                if (isInCache) {
-                    // Instância está no cache mas banco pede restart
-                    console.log(`🔄 RESTART DETECTADO: Instância ${instance.identificador} (ID: ${instance.id}) precisa ser reiniciada`);
-                    instancesToRestart.push(instance);
-                } else {
-                    // Instância não está no cache e tem status 'conectando'
-                    console.log(`🔄 Instância ${instance.identificador} (ID: ${instance.id}) com status 'conectando' não está no cache - será inicializada`);
-                    newInstances.push(instance);
-                }
-            }
-            // CASO 2: Instância nova (não está no cache)
-            else if (!isInCache) {
+            // Carregar apenas instâncias que não estão no cache
+            if (!isInCache) {
                 newInstances.push(instance);
-            }
-        }
-        
-        // PRIMEIRO: Processar restarts (instâncias que estão no cache mas precisam reiniciar)
-        for (const instance of instancesToRestart) {
-            try {
-                console.log(`🔄 Executando restart da instância ${instance.identificador} (ID: ${instance.id})...`);
-                
-                // Parar instância atual
-                const existingInstance = activeInstances.get(instance.id);
-                if (existingInstance) {
-                    console.log(`⏹️ Parando instância ${instance.id} para restart...`);
-                    try {
-                        await existingInstance.client.destroy();
-                        console.log(`🗑️ Cliente da instância ${instance.id} destruído`);
-                    } catch (destroyError) {
-                        console.warn(`⚠️ Erro ao destruir cliente da instância ${instance.id}:`, destroyError.message);
-                    }
-                    activeInstances.delete(instance.id);
-                }
-                
-                // Aguardar limpeza
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                
-                // Limpar sessão bloqueada
-                await cleanLockedSession(instance.id);
-                
-                // Recriar instância
-                console.log(`🚀 Recriando instância ${instance.identificador} (ID: ${instance.id})...`);
-                await createWhatsAppInstance(instance);
-                console.log(`✨ Restart da instância ${instance.identificador} (ID: ${instance.id}) concluído!`);
-                
-            } catch (error) {
-                console.error(`❌ Erro no restart da instância ${instance.identificador} (ID: ${instance.id}):`, error.message);
-                await updateInstanceStatus(instance.id, 'erro');
             }
         }
         
@@ -1084,9 +964,6 @@ async function checkNewInstances() {
                         console.log(`⚠️ Instância ${instance.identificador} (ID: ${instance.id}) não encontrada na API. Pulando inicialização.`);
                         continue;
                     }
-                    
-                    // Limpar sessão bloqueada se existir
-                    await cleanLockedSession(instance.id);
                     
                     await createWhatsAppInstance(instance);
                     
@@ -1273,9 +1150,7 @@ async function loadAllInstances() {
         
         for (const instance of instances) {
             try {
-                console.log(`🔄 Inicializando instância ${instance.identificador}...`);
-                // Limpar sessão bloqueada antes da criação para evitar EBUSY em Windows
-                await cleanLockedSession(instance.id);
+                console.log(`🔄 Inicializando instância ${instance.identificador} (reutilizando sessão quando disponível)...`);
                 await createWhatsAppInstance(instance);
                 
                 // Aguardar um pouco entre as inicializações para evitar sobrecarga
@@ -1320,14 +1195,9 @@ app.post('/api/instances/:id/restart', async (req, res) => {
         const existingInstance = activeInstances.get(instanceId);
         if (existingInstance) {
             console.log(`⏹️ Parando instância ${instanceId} existente...`);
-            try {
-                console.log(`🔧 Destruindo cliente da instância ${instanceId}...`);
-                await existingInstance.client.destroy();
-                console.log(`🗑️ Cliente da instância ${instanceId} destruído com sucesso`);
-            } catch (destroyError) {
-                console.warn(`⚠️ Erro ao destruir cliente da instância ${instanceId}:`, destroyError.message);
-                // Continuar mesmo com erro na destruição
-            }
+            console.log(`🔧 Destruindo cliente da instância ${instanceId} (safe)...`);
+            await safeDestroyClient(existingInstance.client);
+            console.log(`🗑️ Cliente da instância ${instanceId} destruído com sucesso (safe)`);
             
             activeInstances.delete(instanceId);
             console.log(`✅ Instância ${instanceId} removida do cache`);
@@ -1454,10 +1324,18 @@ app.post('/api/instances/:id/validate-number', async (req, res) => {
 app.post('/api/instances/:id/send-message', async (req, res) => {
     try {
         const instanceId = parseInt(req.params.id);
-        const { to, message } = req.body;
+        const { to, message, idempotencyKey } = req.body;
 
         if (!to || !message) {
             return res.status(400).json({ error: 'Parâmetros "to" e "message" são obrigatórios' });
+        }
+        
+        // Idempotency: return cached response if present and fresh
+        if (idempotencyKey) {
+            const cached = outgoingIdempotency.get(idempotencyKey);
+            if (cached && cached.response && (Date.now() - cached.timestamp) <= IDEMPOTENCY_TTL_MS) {
+                return res.json(cached.response);
+            }
         }
         
         // Validar instância antes de tentar enviar
@@ -1475,12 +1353,16 @@ app.post('/api/instances/:id/send-message', async (req, res) => {
         
         console.log(`✅ Instância ${instanceId} validada, enviando mensagem...`);
         const result = await sendMessage(instanceId, to, message);
-        
-        res.json({ 
+        const responsePayload = { 
             success: true, 
             messageId: result.id._serialized,
             instanceId: instanceId
-        });
+        };
+        // Cache successful response for idempotency
+        if (idempotencyKey) {
+            outgoingIdempotency.set(idempotencyKey, { timestamp: Date.now(), response: responsePayload });
+        }
+        res.json(responsePayload);
     } catch (error) {
         console.error('Erro ao enviar mensagem:', error);
         
@@ -1500,7 +1382,7 @@ app.post('/api/instances/:id/send-message', async (req, res) => {
 app.post('/api/instances/:id/send-media', async (req, res) => {
     try {
         const instanceId = parseInt(req.params.id);
-        const { to, message, media } = req.body;
+        const { to, message, media, idempotencyKey } = req.body;
 
         if (!to) {
             return res.status(400).json({ error: 'Parâmetro "to" é obrigatório' });
@@ -1508,6 +1390,14 @@ app.post('/api/instances/:id/send-media', async (req, res) => {
         
         if (!media || !media.data || !media.mimetype) {
             return res.status(400).json({ error: 'Parâmetros "media.data" e "media.mimetype" são obrigatórios' });
+        }
+        
+        // Idempotency: return cached response if present and fresh
+        if (idempotencyKey) {
+            const cached = outgoingIdempotency.get(idempotencyKey);
+            if (cached && cached.response && (Date.now() - cached.timestamp) <= IDEMPOTENCY_TTL_MS) {
+                return res.json(cached.response);
+            }
         }
         
         // Validar instância antes de tentar enviar
@@ -1525,12 +1415,16 @@ app.post('/api/instances/:id/send-media', async (req, res) => {
         
         console.log(`✅ Instância ${instanceId} validada, enviando mídia...`);
         const result = await sendMediaMessage(instanceId, to, message, media);
-        
-        res.json({ 
+        const responsePayload = { 
             success: true, 
             messageId: result.id._serialized,
             instanceId: instanceId
-        });
+        };
+        // Cache successful response for idempotency
+        if (idempotencyKey) {
+            outgoingIdempotency.set(idempotencyKey, { timestamp: Date.now(), response: responsePayload });
+        }
+        res.json(responsePayload);
     } catch (error) {
         console.error('Erro ao enviar mídia:', error);
         
@@ -1547,59 +1441,6 @@ app.post('/api/instances/:id/send-media', async (req, res) => {
 });
 
 // Endpoint para enviar botões interativos NPS
-app.post('/api/instances/:id/send-nps-buttons', async (req, res) => {
-    try {
-        const instanceId = parseInt(req.params.id);
-        const { to, message, title, footer } = req.body;
-
-        if (!to || !message) {
-            return res.status(400).json({ error: 'Parâmetros "to" e "message" são obrigatórios' });
-        }
-        
-        // Validar instância antes de tentar enviar
-        console.log(`📋 Validando instância ${instanceId} antes do envio de botões NPS...`);
-        const validation = await validateInstanceForSending(instanceId);
-        
-        if (!validation.ready) {
-            console.log(`⚠️ Instância ${instanceId} não está pronta: ${validation.reason}`);
-            return res.status(400).json({ 
-                error: `Instância não está pronta para envio: ${validation.reason}`,
-                instanceId: instanceId,
-                ready: false
-            });
-        }
-        
-        console.log(`✅ Instância ${instanceId} validada, enviando botões NPS...`);
-        const result = await sendNPSButtons(instanceId, to, message, title, footer);
-        
-        res.json({ 
-            success: true, 
-            messageId: result.messageId,
-            to: result.to,
-            timestamp: result.timestamp,
-            fallback: result.fallback || false,
-            instanceId: instanceId
-        });
-    } catch (error) {
-        console.error('Erro ao enviar botões NPS:', error);
-        
-        // Determinar código de status baseado no tipo de erro
-        let statusCode = 500;
-        if (error.message.includes('não encontrada') || error.message.includes('não está ativa')) {
-            statusCode = 404;
-        } else if (error.message.includes('não está conectada') || error.message.includes('não pôde ser carregada')) {
-            statusCode = 503; // Service Unavailable
-        } else if (error.message.includes('não possui conta WhatsApp')) {
-            statusCode = 400; // Bad Request - número inválido
-        }
-        
-        res.status(statusCode).json({ 
-            success: false,
-            error: error.message,
-            instanceId: instanceId
-        });
-    }
-});
 
 // Endpoint para parar uma instância específica
 app.delete('/api/instances/:id/stop', async (req, res) => {
@@ -1678,7 +1519,7 @@ process.on('SIGINT', async () => {
     // Fechar todas as instâncias
     for (const [instanceId, instance] of activeInstances) {
         try {
-            await instance.client.destroy();
+            await safeDestroyClient(instance.client);
             console.log(`Instância ${instanceId} encerrada`);
         } catch (error) {
             console.error(`Erro ao encerrar instância ${instanceId}:`, error);

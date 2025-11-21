@@ -60,36 +60,34 @@ try {
                         break;
                         
                     case 'pedidos-recentes':
-                        // GET /api/v1/nps_sync_api/pedidos-recentes - Buscar pedidos recentes para NPS
+                        // GET /api/v1/nps_sync_api/pedidos-recentes - Buscar pedidos recentes para NPS (migrado para pedidos_vendas)
                         $minutos = $_GET['minutos'] ?? 5;
                         $filiais = $_GET['filiais'] ?? null;
                         $limit = $_GET['limit'] ?? 10;
-                        
+
                         $query = "
                             SELECT 
-                                p.pedido as NUMPED,
-                                p.filial as CODFILIAL,
-                                p.caixa as NUMCAIXA,
-                                p.data as DATA,
-                                p.total_itens as VLTOTAL,
-                                p.itens,
-                                p.data_registro_produto
-                            FROM pedidos p
-                            WHERE p.data_registro_produto >= DATE_SUB(NOW(), INTERVAL ? MINUTE)
-                              AND p.total_itens > 0
+                                pv.numped AS NUMPED,
+                                pv.codfilial AS CODFILIAL,
+                                pv.numcaixa AS NUMCAIXA,
+                                pv.data AS DATA,
+                                pv.vltotal AS VLTOTAL
+                            FROM pedidos_vendas pv
+                            WHERE pv.data >= DATE_SUB(NOW(), INTERVAL ? MINUTE)
+                              AND pv.vltotal > 0
                         ";
                         $params = [$minutos];
-                        
+
                         if ($filiais) {
                             $filiaisArray = explode(',', $filiais);
                             $placeholders = str_repeat('?,', count($filiaisArray) - 1) . '?';
-                            $query .= " AND p.filial IN ($placeholders)";
+                            $query .= " AND pv.codfilial IN ($placeholders)";
                             $params = array_merge($params, $filiaisArray);
                         }
-                        
-                        $query .= " ORDER BY p.data_registro_produto DESC LIMIT ?";
+
+                        $query .= " ORDER BY pv.data DESC LIMIT ?";
                         $params[] = (int)$limit;
-                        
+
                         $stmt = $pdo->prepare($query);
                         $stmt->execute($params);
                         $pedidos = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -234,25 +232,80 @@ try {
                         // POST /api/v1/nps_sync_api/estado-conversa - Criar estado de conversa NPS
                         $input = json_decode(file_get_contents('php://input'), true);
                         
-                        $required = ['controle_envio_id', 'instancia_id', 'celular'];
-                        foreach ($required as $field) {
-                            if (!isset($input[$field])) {
-                                http_response_code(400);
-                                echo json_encode(['error' => "Campo $field é obrigatório"]);
-                                exit();
+                        // Aceitar alias e preparar variáveis
+                        $controleEnvioId = $input['controle_envio_id'] ?? $input['controle_id'] ?? null;
+                        $instanciaId = $input['instancia_id'] ?? null;
+                        $celular = $input['celular'] ?? null;
+
+                        // Tentar localizar controle pelo ID fornecido
+                        $controle = null;
+                        if ($controleEnvioId) {
+                            $stmt = $pdo->prepare("SELECT id, instancia_id, celular FROM controle_envios_nps WHERE id = ? LIMIT 1");
+                            $stmt->execute([$controleEnvioId]);
+                            $controle = $stmt->fetch(PDO::FETCH_ASSOC);
+                        }
+
+                        // Se ID inválido ou não informado, tentar fallback por pedido/campanha
+                        if (!$controle) {
+                            if (isset($input['pedido_id']) && isset($input['campanha_id'])) {
+                                $stmt = $pdo->prepare("SELECT id, instancia_id, celular FROM controle_envios_nps WHERE pedido_id = ? AND campanha_id = ? LIMIT 1");
+                                $stmt->execute([$input['pedido_id'], $input['campanha_id']]);
+                                $controle = $stmt->fetch(PDO::FETCH_ASSOC);
+                                if ($controle) {
+                                    $controleEnvioId = $controle['id'];
+                                }
                             }
                         }
-                        
-                        $stmt = $pdo->prepare("
-                            INSERT INTO estado_conversa_nps 
+
+                        // Se não encontrou controle, retornar 404
+                        if (!$controleEnvioId || !$controle) {
+                            http_response_code(404);
+                            echo json_encode([
+                                'error' => 'controle_envio_id não encontrado para estado-conversa',
+                                'details' => [
+                                    'controle_envio_id' => $input['controle_envio_id'] ?? $input['controle_id'] ?? null,
+                                    'pedido_id' => $input['pedido_id'] ?? null,
+                                    'campanha_id' => $input['campanha_id'] ?? null
+                                ]
+                            ]);
+                            break;
+                        }
+
+                        // Preencher instancia/celular a partir do controle, se não vierem
+                        if (!$instanciaId && !empty($controle['instancia_id'])) {
+                            $instanciaId = $controle['instancia_id'];
+                        }
+                        if (!$celular && !empty($controle['celular'])) {
+                            $celular = $controle['celular'];
+                        }
+
+                        // Validar campos mínimos
+                        if (!$instanciaId || !$celular) {
+                            http_response_code(400);
+                            echo json_encode(['error' => 'instancia_id e celular são obrigatórios']);
+                            break;
+                        }
+
+                        // Idempotência: se já existe estado para este controle, não duplicar
+                        $stmt = $pdo->prepare("SELECT id FROM estado_conversa_nps WHERE controle_envio_id = ? LIMIT 1");
+                        $stmt->execute([$controleEnvioId]);
+                        $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+                        if ($existing) {
+                            echo json_encode(['success' => true, 'existing' => true, 'estado_id' => $existing['id']]);
+                            break;
+                        }
+
+                        // Inserir estado de conversa
+                        $stmt = $pdo->prepare(
+                            "INSERT INTO estado_conversa_nps 
                             (controle_envio_id, instancia_id, celular, pergunta_atual_id, aguardando_resposta, data_criacao)
-                            VALUES (?, ?, ?, ?, ?, NOW())
-                        ");
+                            VALUES (?, ?, ?, ?, ?, NOW())"
+                        );
                         
                         $success = $stmt->execute([
-                            $input['controle_envio_id'],
-                            $input['instancia_id'],
-                            $input['celular'],
+                            $controleEnvioId,
+                            $instanciaId,
+                            $celular,
                             $input['pergunta_atual_id'] ?? 1,
                             $input['aguardando_resposta'] ?? true
                         ]);
@@ -337,20 +390,47 @@ try {
                         ]);
                         
                         // Se enviado com sucesso, criar estado de conversa
-                        if ($success && $input['status_envio'] === 'enviado' && isset($input['celular']) && isset($input['instancia_id'])) {
-                            $stmt = $pdo->prepare("
-                                INSERT INTO estado_conversa_nps (
-                                    controle_envio_id, instancia_id, celular, 
-                                    aguardando_resposta, data_timeout
-                                ) VALUES (?, ?, ?, TRUE, DATE_ADD(NOW(), INTERVAL ? MINUTE))
-                            ");
-                            
-                            $stmt->execute([
-                                $input['controle_id'],
-                                $input['instancia_id'],
-                                $input['celular'],
-                                $input['timeout_minutos'] ?? 60
-                            ]);
+                        if ($success && $input['status_envio'] === 'enviado') {
+                            // Garantir que o controle existe; preencher celular/instância por fallback
+                            $stmt = $pdo->prepare("SELECT id, instancia_id, celular FROM controle_envios_nps WHERE id = ? LIMIT 1");
+                            $stmt->execute([$input['controle_id']]);
+                            $controle = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                            if (!$controle) {
+                                // Tentar fallback por pedido/campanha se fornecidos
+                                if (isset($input['pedido_id']) && isset($input['campanha_id'])) {
+                                    $stmt = $pdo->prepare("SELECT id, instancia_id, celular FROM controle_envios_nps WHERE pedido_id = ? AND campanha_id = ? LIMIT 1");
+                                    $stmt->execute([$input['pedido_id'], $input['campanha_id']]);
+                                    $controle = $stmt->fetch(PDO::FETCH_ASSOC);
+                                }
+                            }
+
+                            if ($controle) {
+                                $instanciaId = $input['instancia_id'] ?? $controle['instancia_id'] ?? null;
+                                $celular = $input['celular'] ?? $controle['celular'] ?? null;
+
+                                if ($instanciaId && $celular) {
+                                    // Idempotência: não duplicar estado
+                                    $stmt = $pdo->prepare("SELECT id FROM estado_conversa_nps WHERE controle_envio_id = ? LIMIT 1");
+                                    $stmt->execute([$controle['id']]);
+                                    $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                                    if (!$existing) {
+                                        $stmt = $pdo->prepare("
+                                            INSERT INTO estado_conversa_nps (
+                                                controle_envio_id, instancia_id, celular, 
+                                                aguardando_resposta, data_timeout
+                                            ) VALUES (?, ?, ?, TRUE, DATE_ADD(NOW(), INTERVAL ? MINUTE))
+                                        ");
+                                        $stmt->execute([
+                                            $controle['id'],
+                                            $instanciaId,
+                                            $celular,
+                                            $input['timeout_minutos'] ?? 60
+                                        ]);
+                                    }
+                                }
+                            }
                         }
                         
                         if ($success) {

@@ -16,7 +16,7 @@ class Config {
         // Detectar ambiente baseado no host
         $isProduction = isset($_SERVER['HTTP_HOST']) && 
                        (strpos($_SERVER['HTTP_HOST'], 'novotokapi.online') !== false ||
-                        strpos($_SERVER['HTTP_HOST'], 'localhost') === true); // Alterar aqui para false para produção
+                        strpos($_SERVER['HTTP_HOST'], 'localhost') === false); // Alterar aqui para false para produção
         
         if ($isProduction) {
             return [

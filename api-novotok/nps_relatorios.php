@@ -39,6 +39,9 @@ try {
             case 'dashboard':
                 obterDashboard($db);
                 break;
+            case 'dashboard_stats_test':
+                obterDashboardStatsTest($db);
+                break;
             case 'metricas':
                 obterMetricas($db);
                 break;
@@ -62,8 +65,50 @@ try {
     echo json_encode(['error' => 'Erro interno do servidor: ' . $e->getMessage()]);
 }
 
+function obterDashboardStatsTest($db) {
+    try {
+        $db->exec("SET SESSION collation_connection = 'utf8mb4_general_ci'");
+        $db->exec("SET NAMES utf8mb4 COLLATE utf8mb4_general_ci");
+        $dataInicio = $_GET['data_inicio'] ?? date('Y-m-01');
+        $dataFim = $_GET['data_fim'] ?? date('Y-m-d');
+        $filial = $_GET['filial'] ?? null;
+        $campanha = $_GET['campanha'] ?? null;
+        $instancia = $_GET['instancia'] ?? null;
+
+        $statsQuery = "SELECT 
+                        COUNT(*) as total_envios,
+                        CAST(SUM(CASE WHEN c.status_envio COLLATE utf8mb4_general_ci = 'enviado' THEN 1 ELSE 0 END) AS UNSIGNED) as enviados,
+                        CAST(SUM(CASE WHEN c.status_envio COLLATE utf8mb4_general_ci = 'finalizado' OR EXISTS (
+                            SELECT 1 FROM respostas_nps r
+                            WHERE r.controle_envio_id = c.id
+                        ) THEN 1 ELSE 0 END) AS UNSIGNED) as finalizados,
+                        CAST(SUM(CASE WHEN c.status_envio COLLATE utf8mb4_general_ci = 'cancelado' THEN 1 ELSE 0 END) AS UNSIGNED) as cancelados,
+                        CAST(SUM(CASE WHEN c.status_envio COLLATE utf8mb4_general_ci = 'erro' THEN 1 ELSE 0 END) AS UNSIGNED) as erros
+                       FROM controle_envios_nps c
+                       WHERE DATE(c.data_cadastro) BETWEEN ? AND ?";
+
+        $params = [$dataInicio, $dataFim];
+        if ($filial) { $statsQuery .= " AND filial = ?"; $params[] = $filial; }
+        if ($campanha) { $statsQuery .= " AND campanha_id = ?"; $params[] = $campanha; }
+        if ($instancia) { $statsQuery .= " AND instancia_id = ?"; $params[] = $instancia; }
+
+        $stmt = $db->prepare($statsQuery);
+        $stmt->execute($params);
+        $stats = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        echo json_encode(['success' => true, 'data' => ['estatisticas' => $stats]]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Erro ao testar estatísticas: ' . $e->getMessage()]);
+    }
+}
+
 function obterDashboard($db) {
     try {
+        // Harmonizar a collation da conexão para evitar conflitos nas comparações com collation de colunas existentes
+        // O dashboard agrega dados de várias tabelas legadas que podem estar em utf8mb4_general_ci
+        $db->exec("SET SESSION collation_connection = 'utf8mb4_general_ci'");
+        $db->exec("SET NAMES utf8mb4 COLLATE utf8mb4_general_ci");
         $dataInicio = $_GET['data_inicio'] ?? date('Y-m-01');
         $dataFim = $_GET['data_fim'] ?? date('Y-m-d');
         $filial = $_GET['filial'] ?? null;
@@ -73,20 +118,20 @@ function obterDashboard($db) {
         // Estatísticas gerais
         $statsQuery = "SELECT 
                         COUNT(*) as total_envios,
-                        CAST(SUM(CASE WHEN status_envio = 'enviado' THEN 1 ELSE 0 END) AS UNSIGNED) as enviados,
-                        CAST(SUM(CASE WHEN status_envio = 'finalizado' OR EXISTS (
+                        CAST(SUM(CASE WHEN BINARY c.status_envio = BINARY 'enviado' THEN 1 ELSE 0 END) AS UNSIGNED) as enviados,
+                        CAST(SUM(CASE WHEN BINARY c.status_envio = BINARY 'finalizado' OR EXISTS (
                             SELECT 1 FROM respostas_nps r
                             WHERE r.controle_envio_id = c.id
                         ) THEN 1 ELSE 0 END) AS UNSIGNED) as finalizados,
-                        CAST(SUM(CASE WHEN status_envio = 'cancelado' THEN 1 ELSE 0 END) AS UNSIGNED) as cancelados,
-                        CAST(SUM(CASE WHEN status_envio = 'erro' THEN 1 ELSE 0 END) AS UNSIGNED) as erros
+                        CAST(SUM(CASE WHEN BINARY c.status_envio = BINARY 'cancelado' THEN 1 ELSE 0 END) AS UNSIGNED) as cancelados,
+                        CAST(SUM(CASE WHEN BINARY c.status_envio = BINARY 'erro' THEN 1 ELSE 0 END) AS UNSIGNED) as erros
                        FROM controle_envios_nps c
                        WHERE DATE(c.data_cadastro) BETWEEN ? AND ?";
         
         $params = [$dataInicio, $dataFim];
         
         if ($filial) {
-            $statsQuery .= " AND filial = ?";
+            $statsQuery .= " AND BINARY filial = BINARY ?";
             $params[] = $filial;
         }
         
@@ -100,17 +145,21 @@ function obterDashboard($db) {
             $params[] = $instancia;
         }
         
-        $statsStmt = $db->prepare($statsQuery);
-        $statsStmt->execute($params);
-        $stats = $statsStmt->fetch(PDO::FETCH_ASSOC);
+        try {
+            $statsStmt = $db->prepare($statsQuery);
+            $statsStmt->execute($params);
+            $stats = $statsStmt->fetch(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            throw new Exception('Falha ao executar estatisticas: ' . $e->getMessage());
+        }
         
         // Métricas NPS
         $npsQuery = "SELECT 
                         COUNT(*) as total_respostas,
                         AVG(nota_nps) as nota_media,
-                        SUM(CASE WHEN classificacao_nps = 'promotor' THEN 1 ELSE 0 END) as promotores,
-                        SUM(CASE WHEN classificacao_nps = 'neutro' THEN 1 ELSE 0 END) as neutros,
-                        SUM(CASE WHEN classificacao_nps = 'detrator' THEN 1 ELSE 0 END) as detratores
+                        SUM(CASE WHEN BINARY r.classificacao_nps = BINARY 'promotor' THEN 1 ELSE 0 END) as promotores,
+                        SUM(CASE WHEN BINARY r.classificacao_nps = BINARY 'neutro' THEN 1 ELSE 0 END) as neutros,
+                        SUM(CASE WHEN BINARY r.classificacao_nps = BINARY 'detrator' THEN 1 ELSE 0 END) as detratores
                      FROM respostas_nps r
                      INNER JOIN controle_envios_nps c ON r.controle_envio_id = c.id
                      WHERE DATE(r.data_resposta) BETWEEN ? AND ?
@@ -119,7 +168,7 @@ function obterDashboard($db) {
         $npsParams = [$dataInicio, $dataFim];
         
         if ($filial) {
-            $npsQuery .= " AND c.filial = ?";
+            $npsQuery .= " AND BINARY c.filial = BINARY ?";
             $npsParams[] = $filial;
         }
         
@@ -133,9 +182,13 @@ function obterDashboard($db) {
             $npsParams[] = $instancia;
         }
         
-        $npsStmt = $db->prepare($npsQuery);
-        $npsStmt->execute($npsParams);
-        $npsData = $npsStmt->fetch(PDO::FETCH_ASSOC);
+        try {
+            $npsStmt = $db->prepare($npsQuery);
+            $npsStmt->execute($npsParams);
+            $npsData = $npsStmt->fetch(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            throw new Exception('Falha ao executar nps: ' . $e->getMessage());
+        }
         
         // Calcular score NPS
         $scoreNPS = 0;
@@ -151,8 +204,8 @@ function obterDashboard($db) {
                             COUNT(DISTINCT c.id) as total_envios,
                             COUNT(DISTINCT r.id) as total_respostas,
                             AVG(r.nota_nps) as nota_media,
-                            SUM(CASE WHEN r.classificacao_nps = 'promotor' THEN 1 ELSE 0 END) as promotores,
-                            SUM(CASE WHEN r.classificacao_nps = 'detrator' THEN 1 ELSE 0 END) as detratores
+                            SUM(CASE WHEN BINARY r.classificacao_nps = BINARY 'promotor' THEN 1 ELSE 0 END) as promotores,
+                            SUM(CASE WHEN BINARY r.classificacao_nps = BINARY 'detrator' THEN 1 ELSE 0 END) as detratores
                         FROM controle_envios_nps c
                         LEFT JOIN respostas_nps r ON c.id = r.controle_envio_id AND r.pergunta_id IS NULL
                         WHERE DATE(c.data_cadastro) BETWEEN ? AND ?";
@@ -160,7 +213,7 @@ function obterDashboard($db) {
         $filialParams = [$dataInicio, $dataFim];
         
         if ($filial) {
-            $filialQuery .= " AND c.filial = ?";
+            $filialQuery .= " AND BINARY c.filial = BINARY ?";
             $filialParams[] = $filial;
         }
         
@@ -176,9 +229,13 @@ function obterDashboard($db) {
         
         $filialQuery .= " GROUP BY c.filial ORDER BY c.filial";
         
-        $filialStmt = $db->prepare($filialQuery);
-        $filialStmt->execute($filialParams);
-        $dadosFilial = $filialStmt->fetchAll(PDO::FETCH_ASSOC);
+        try {
+            $filialStmt = $db->prepare($filialQuery);
+            $filialStmt->execute($filialParams);
+            $dadosFilial = $filialStmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            throw new Exception('Falha ao executar por_filial: ' . $e->getMessage());
+        }
         
         // Calcular NPS por filial
         foreach ($dadosFilial as &$filialData) {
@@ -199,8 +256,8 @@ function obterDashboard($db) {
                             COUNT(DISTINCT c.id) as total_envios,
                             COUNT(DISTINCT r.id) as total_respostas,
                             AVG(r.nota_nps) as nota_media,
-                            SUM(CASE WHEN r.classificacao_nps = 'promotor' THEN 1 ELSE 0 END) as promotores,
-                            SUM(CASE WHEN r.classificacao_nps = 'detrator' THEN 1 ELSE 0 END) as detratores
+                            SUM(CASE WHEN BINARY r.classificacao_nps = BINARY 'promotor' THEN 1 ELSE 0 END) as promotores,
+                            SUM(CASE WHEN BINARY r.classificacao_nps = BINARY 'detrator' THEN 1 ELSE 0 END) as detratores
                         FROM controle_envios_nps c
                         INNER JOIN campanhas_nps camp ON c.campanha_id = camp.id
                         LEFT JOIN respostas_nps r ON c.id = r.controle_envio_id AND r.pergunta_id IS NULL
@@ -209,7 +266,7 @@ function obterDashboard($db) {
         $campanhaParams = [$dataInicio, $dataFim];
         
         if ($filial) {
-            $campanhaQuery .= " AND c.filial = ?";
+            $campanhaQuery .= " AND BINARY c.filial = BINARY ?";
             $campanhaParams[] = $filial;
         }
         
@@ -225,9 +282,13 @@ function obterDashboard($db) {
         
         $campanhaQuery .= " GROUP BY c.campanha_id, camp.nome ORDER BY camp.nome";
         
-        $campanhaStmt = $db->prepare($campanhaQuery);
-        $campanhaStmt->execute($campanhaParams);
-        $dadosCampanha = $campanhaStmt->fetchAll(PDO::FETCH_ASSOC);
+        try {
+            $campanhaStmt = $db->prepare($campanhaQuery);
+            $campanhaStmt->execute($campanhaParams);
+            $dadosCampanha = $campanhaStmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            throw new Exception('Falha ao executar por_campanha: ' . $e->getMessage());
+        }
         
         // Calcular NPS por campanha
         foreach ($dadosCampanha as &$campanhaData) {
@@ -241,28 +302,28 @@ function obterDashboard($db) {
             }
         }
         
-        // Score de Vendedores
+        // Score de Vendedores (migrado para pedidos_vendas)
         $vendedorQuery = "SELECT 
-                            p.vendedor,
-                            v.nome as nome_vendedor,
-                            COUNT(DISTINCT c.id) as total_envios,
-                            COUNT(DISTINCT r.id) as total_respostas,
-                            AVG(r.nota_nps) as nota_media,
-                            SUM(CASE WHEN r.classificacao_nps = 'promotor' THEN 1 ELSE 0 END) as promotores,
-                            SUM(CASE WHEN r.classificacao_nps = 'neutro' THEN 1 ELSE 0 END) as neutros,
-                            SUM(CASE WHEN r.classificacao_nps = 'detrator' THEN 1 ELSE 0 END) as detratores
+                            pv.codusur AS vendedor,
+                            COALESCE(v.nome, pv.nome) AS nome_vendedor,
+                            COUNT(DISTINCT c.id) AS total_envios,
+                            COUNT(DISTINCT r.id) AS total_respostas,
+                            AVG(r.nota_nps) AS nota_media,
+                            SUM(CASE WHEN BINARY r.classificacao_nps = BINARY 'promotor' THEN 1 ELSE 0 END) AS promotores,
+                            SUM(CASE WHEN BINARY r.classificacao_nps = BINARY 'neutro' THEN 1 ELSE 0 END) AS neutros,
+                            SUM(CASE WHEN BINARY r.classificacao_nps = BINARY 'detrator' THEN 1 ELSE 0 END) AS detratores
                           FROM controle_envios_nps c
-                          INNER JOIN pedidos p ON c.pedido_id = p.pedido
-                          LEFT JOIN vendedores v ON p.vendedor = v.rca
+                          INNER JOIN pedidos_vendas pv ON BINARY c.numero_pedido = BINARY pv.numped
+                          LEFT JOIN vendedores v ON BINARY pv.codusur = BINARY v.rca
                           LEFT JOIN respostas_nps r ON c.id = r.controle_envio_id AND r.pergunta_id IS NULL
                           WHERE DATE(c.data_cadastro) BETWEEN ? AND ?
-                            AND p.vendedor IS NOT NULL
-                            AND p.vendedor != ''";
+                            AND pv.codusur IS NOT NULL
+                            AND BINARY pv.codusur <> BINARY ''";
         
         $vendedorParams = [$dataInicio, $dataFim];
         
         if ($filial) {
-            $vendedorQuery .= " AND c.filial = ?";
+            $vendedorQuery .= " AND BINARY c.filial = BINARY ?";
             $vendedorParams[] = $filial;
         }
         
@@ -276,11 +337,15 @@ function obterDashboard($db) {
             $vendedorParams[] = $instancia;
         }
         
-        $vendedorQuery .= " GROUP BY p.vendedor ORDER BY AVG(r.nota_nps) DESC, COUNT(DISTINCT r.id) DESC";
+        $vendedorQuery .= " GROUP BY pv.codusur ORDER BY AVG(r.nota_nps) DESC, COUNT(DISTINCT r.id) DESC";
         
-        $vendedorStmt = $db->prepare($vendedorQuery);
-        $vendedorStmt->execute($vendedorParams);
-        $dadosVendedor = $vendedorStmt->fetchAll(PDO::FETCH_ASSOC);
+        try {
+            $vendedorStmt = $db->prepare($vendedorQuery);
+            $vendedorStmt->execute($vendedorParams);
+            $dadosVendedor = $vendedorStmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            throw new Exception('Falha ao executar por_vendedor: ' . $e->getMessage());
+        }
         
         // Calcular NPS por vendedor e adicionar ranking
         $ranking = 1;
@@ -353,9 +418,9 @@ function obterMetricas($db) {
                     DATE(r.data_resposta) as data,
                     COUNT(*) as total_respostas,
                     AVG(r.nota_nps) as nota_media,
-                    SUM(CASE WHEN r.classificacao_nps = 'promotor' THEN 1 ELSE 0 END) as promotores,
-                    SUM(CASE WHEN r.classificacao_nps = 'neutro' THEN 1 ELSE 0 END) as neutros,
-                    SUM(CASE WHEN r.classificacao_nps = 'detrator' THEN 1 ELSE 0 END) as detratores
+                    SUM(CASE WHEN BINARY r.classificacao_nps = BINARY 'promotor' THEN 1 ELSE 0 END) as promotores,
+                    SUM(CASE WHEN BINARY r.classificacao_nps = BINARY 'neutro' THEN 1 ELSE 0 END) as neutros,
+                    SUM(CASE WHEN BINARY r.classificacao_nps = BINARY 'detrator' THEN 1 ELSE 0 END) as detratores
                   FROM respostas_nps r
                   INNER JOIN controle_envios_nps c ON r.controle_envio_id = c.id
                   WHERE DATE(r.data_resposta) BETWEEN ? AND ?
@@ -364,7 +429,7 @@ function obterMetricas($db) {
         $params = [$dataInicio, $dataFim];
         
         if ($filial) {
-            $query .= " AND c.filial = ?";
+            $query .= " AND BINARY c.filial = BINARY ?";
             $params[] = $filial;
         }
         
@@ -498,7 +563,7 @@ function obterConversas($db) {
                     CASE 
                         WHEN ec.data_timeout < NOW() THEN 'EXPIRADA'
                         WHEN ec.aguardando_resposta = TRUE THEN 'AGUARDANDO'
-                        WHEN c.status_envio = 'finalizado' THEN 'FINALIZADA'
+                        WHEN BINARY c.status_envio = BINARY 'finalizado' THEN 'FINALIZADA'
                         ELSE 'PROCESSANDO'
                     END as status_conversa
                   FROM controle_envios_nps c
@@ -514,13 +579,13 @@ function obterConversas($db) {
                     $query .= " AND ec.aguardando_resposta = TRUE AND ec.data_timeout > NOW()";
                     break;
                 case 'finalizadas':
-                    $query .= " AND c.status_envio = 'finalizado'";
+                    $query .= " AND BINARY c.status_envio = BINARY 'finalizado'";
                     break;
                 case 'expiradas':
                     $query .= " AND ec.data_timeout < NOW()";
                     break;
                 case 'canceladas':
-                    $query .= " AND c.status_envio = 'cancelado'";
+                    $query .= " AND BINARY c.status_envio = BINARY 'cancelado'";
                     break;
             }
         }

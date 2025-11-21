@@ -1,0 +1,95 @@
+[2025-11-21 00:12:14] POST estado-conversa recebido {"controle_envio_id":2,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":8010164,"campanha_id":9}
+[2025-11-21 00:12:15] Falha FK ao inserir estado {"controle_envio_id":2,"error":"SQLSTATE[23000]: Integrity constraint violation: 1452 Cannot add or update a child row: a foreign key constraint fails (`novotok`.`estado_conversa_nps`, CONSTRAINT `estado_conversa_nps_ibfk_1` FOREIGN KEY (`controle_envio_id`) REFERENCES `controle_envios_nps` (`id`) ON DELETE CASCADE)"}
+[2025-11-21 00:14:05] POST estado-conversa recebido {"controle_envio_id":2,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":8010164,"campanha_id":9}
+[2025-11-21 00:14:05] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":2}
+[2025-11-21 00:14:05] Falha FK ao inserir estado {"controle_envio_id":2,"error":"SQLSTATE[23000]: Integrity constraint violation: 1452 Cannot add or update a child row: a foreign key constraint fails (`novotok`.`estado_conversa_nps`, CONSTRAINT `estado_conversa_nps_ibfk_1` FOREIGN KEY (`controle_envio_id`) REFERENCES `controle_envios_nps` (`id`) ON DELETE CASCADE)","exists_after_fail":true}
+[2025-11-21 00:23:04] POST estado-conversa recebido {"controle_envio_id":2,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":8010164,"campanha_id":9}
+[2025-11-21 00:23:04] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":2}
+[2025-11-21 00:23:04] Estado de conversa criado {"id":0,"controle_envio_id":2}
+[2025-11-21 00:38:49] POST estado-conversa recebido {"controle_envio_id":3,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010165","campanha_id":9}
+[2025-11-21 00:38:49] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":3}
+[2025-11-21 00:38:49] Estado de conversa criado {"id":103,"controle_envio_id":3}
+[2025-11-21 01:08:11] POST estado-conversa recebido {"controle_envio_id":4,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010166","campanha_id":9}
+[2025-11-21 01:08:11] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":4}
+[2025-11-21 01:08:11] Estado de conversa criado {"id":104,"controle_envio_id":4}
+[2025-11-21 01:09:14] POST estado-conversa recebido {"controle_envio_id":4,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":8010166,"campanha_id":9}
+[2025-11-21 01:09:14] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":4}
+[2025-11-21 01:09:14] Estado de conversa criado {"id":105,"controle_envio_id":4}
+[2025-11-21 01:09:35] POST estado-conversa recebido {"controle_envio_id":5,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010166","campanha_id":9}
+[2025-11-21 01:09:35] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":5}
+[2025-11-21 01:09:35] Estado de conversa criado {"id":106,"controle_envio_id":5}
+[2025-11-21 01:11:35] POST estado-conversa recebido {"controle_envio_id":5,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":8010166,"campanha_id":9}
+[2025-11-21 01:11:35] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":5}
+[2025-11-21 01:11:35] Estado de conversa criado {"id":107,"controle_envio_id":5}
+[2025-11-21 01:11:35] POST estado-conversa recebido {"controle_envio_id":3,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":8010165,"campanha_id":9}
+[2025-11-21 01:11:35] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":3}
+[2025-11-21 01:11:35] Estado de conversa criado {"id":108,"controle_envio_id":3}
+[2025-11-21 01:11:35] POST estado-conversa recebido {"controle_envio_id":2,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":8010164,"campanha_id":9}
+[2025-11-21 01:11:35] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":2}
+[2025-11-21 01:11:35] Estado de conversa criado {"id":109,"controle_envio_id":2}
+[2025-11-21 01:11:42] POST estado-conversa recebido {"controle_envio_id":6,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":8010166,"campanha_id":9}
+[2025-11-21 01:11:42] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":6}
+[2025-11-21 01:11:42] Estado de conversa criado {"id":110,"controle_envio_id":6}
+[2025-11-21 01:16:30] POST estado-conversa recebido {"controle_envio_id":7,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010166","campanha_id":9}
+[2025-11-21 01:16:30] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":7}
+[2025-11-21 01:16:30] Estado de conversa criado {"id":111,"controle_envio_id":7}
+[2025-11-21 01:17:30] POST estado-conversa recebido {"controle_envio_id":8,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010166","campanha_id":9}
+[2025-11-21 01:17:30] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":8}
+[2025-11-21 01:17:30] Estado de conversa criado {"id":112,"controle_envio_id":8}
+[2025-11-21 01:24:21] POST estado-conversa recebido {"controle_envio_id":8,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":8010166,"campanha_id":9}
+[2025-11-21 01:24:21] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":8}
+[2025-11-21 01:24:21] Estado de conversa criado {"id":113,"controle_envio_id":8}
+[2025-11-21 01:26:47] POST estado-conversa recebido {"controle_envio_id":9,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010167","campanha_id":9}
+[2025-11-21 01:26:47] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":9}
+[2025-11-21 01:26:47] Estado de conversa criado {"id":114,"controle_envio_id":9}
+[2025-11-21 01:35:15] POST estado-conversa recebido {"controle_envio_id":10,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010167","campanha_id":9}
+[2025-11-21 01:35:15] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":10}
+[2025-11-21 01:35:15] Estado de conversa criado {"id":115,"controle_envio_id":10}
+[2025-11-21 01:35:21] POST estado-conversa recebido {"controle_envio_id":11,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":8010166,"campanha_id":9}
+[2025-11-21 01:35:21] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":11}
+[2025-11-21 01:35:21] Estado de conversa criado {"id":116,"controle_envio_id":11}
+[2025-11-21 01:40:52] POST estado-conversa recebido {"controle_envio_id":12,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010167","campanha_id":9}
+[2025-11-21 01:40:52] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":12}
+[2025-11-21 01:40:52] Estado de conversa criado {"id":117,"controle_envio_id":12}
+[2025-11-21 01:40:56] POST estado-conversa recebido {"controle_envio_id":13,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":8010166,"campanha_id":9}
+[2025-11-21 01:40:56] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":13}
+[2025-11-21 01:40:56] Estado de conversa criado {"id":118,"controle_envio_id":13}
+[2025-11-21 01:45:07] POST estado-conversa recebido {"controle_envio_id":14,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010164","campanha_id":9}
+[2025-11-21 01:45:07] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":14}
+[2025-11-21 01:45:07] Estado de conversa criado {"id":119,"controle_envio_id":14}
+[2025-11-21 01:46:10] POST estado-conversa recebido {"controle_envio_id":15,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010164","campanha_id":9}
+[2025-11-21 01:46:10] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":15}
+[2025-11-21 01:46:10] Estado de conversa criado {"id":120,"controle_envio_id":15}
+[2025-11-21 01:50:35] POST estado-conversa recebido {"controle_envio_id":16,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010164","campanha_id":9}
+[2025-11-21 01:50:35] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":16}
+[2025-11-21 01:50:35] Estado de conversa criado {"id":121,"controle_envio_id":16}
+[2025-11-21 01:51:14] POST estado-conversa recebido {"controle_envio_id":17,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010164","campanha_id":9}
+[2025-11-21 01:51:14] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":17}
+[2025-11-21 01:51:14] Estado de conversa criado {"id":122,"controle_envio_id":17}
+[2025-11-21 01:57:17] POST estado-conversa recebido {"controle_envio_id":18,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010164","campanha_id":9}
+[2025-11-21 01:57:17] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":18}
+[2025-11-21 01:57:17] Estado de conversa criado {"id":123,"controle_envio_id":18}
+[2025-11-21 04:43:23] POST estado-conversa recebido {"controle_envio_id":19,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010165","campanha_id":9}
+[2025-11-21 04:43:23] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":19}
+[2025-11-21 04:43:23] Estado de conversa criado {"id":124,"controle_envio_id":19}
+[2025-11-21 11:25:21] POST estado-conversa recebido {"controle_envio_id":19,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":8010165,"campanha_id":9}
+[2025-11-21 11:25:21] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":19}
+[2025-11-21 11:25:21] Estado de conversa criado {"id":125,"controle_envio_id":19}
+[2025-11-21 11:25:28] POST estado-conversa recebido {"controle_envio_id":19,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":8010165,"campanha_id":9}
+[2025-11-21 11:25:28] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":19}
+[2025-11-21 11:25:28] Estado de conversa criado {"id":126,"controle_envio_id":19}
+[2025-11-21 11:33:44] POST estado-conversa recebido {"controle_envio_id":20,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010166","campanha_id":9}
+[2025-11-21 11:33:44] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":20}
+[2025-11-21 11:33:44] Estado de conversa criado {"id":127,"controle_envio_id":20}
+[2025-11-21 11:41:30] POST estado-conversa recebido {"controle_envio_id":21,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010167","campanha_id":9}
+[2025-11-21 11:41:30] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":21}
+[2025-11-21 11:41:30] Estado de conversa criado {"id":128,"controle_envio_id":21}
+[2025-11-21 12:04:18] POST estado-conversa recebido {"controle_envio_id":22,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010168","campanha_id":9}
+[2025-11-21 12:04:18] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":22}
+[2025-11-21 12:04:18] Estado de conversa criado {"id":129,"controle_envio_id":22}
+[2025-11-21 12:05:51] POST estado-conversa recebido {"controle_envio_id":23,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010168","campanha_id":9}
+[2025-11-21 12:05:51] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":23}
+[2025-11-21 12:05:51] Estado de conversa criado {"id":130,"controle_envio_id":23}
+[2025-11-21 12:47:01] POST estado-conversa recebido {"controle_envio_id":24,"instancia_id":44,"celular":"5594981413567@c.us","pedido_id":"8010169","campanha_id":9}
+[2025-11-21 12:47:01] Controle encontrado e travado (FOR UPDATE) {"controle_envio_id":24}
+[2025-11-21 12:47:01] Estado de conversa criado {"id":131,"controle_envio_id":24}

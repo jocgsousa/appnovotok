@@ -41,57 +41,93 @@ try {
     $filiais = $_GET['filiais'] ?? null;
     $limit = $_GET['limit'] ?? 100;
     
-    // Construir query para buscar pedidos recentes no MySQL
-    // Usando data_registro_produto para filtrar pedidos recentes (mais relevante para NPS)
-    $query = "SELECT 
-                p.pedido as NUMPED,
-                p.filial as CODFILIAL,
-                p.caixa as NUMCAIXA,
-                p.data as DATA,
-                p.data_registro_produto,
-                p.total_itens as VLTOTAL,
-                p.vendedor,
-                p.created_at,
-                p.itens
-              FROM pedidos p
-              WHERE p.data_registro_produto >= DATE_SUB(NOW(), INTERVAL ? MINUTE)
-              AND p.data_registro_produto IS NOT NULL
-              AND p.itens IS NOT NULL
-              AND p.itens != ''";
-    
-    $params = [$minutos];
-    
+    // Migrado: consultar pedidos recentes a partir de pedidos_vendas
+    // Usa dtfat/horafat/minutofat para precisão temporal; fallback para data (23:59:59)
+    $where = [];
+    $params = [];
+
+    $where[] = "( 
+        (pv.dtfat IS NOT NULL 
+         AND pv.horafat IS NOT NULL 
+         AND pv.minutofat IS NOT NULL) 
+        AND ( 
+            CASE 
+                WHEN pv.dtfat LIKE '%-%' 
+                THEN STR_TO_DATE(CONCAT(pv.dtfat, ' ', LPAD(pv.horafat, 2, '0'), ':', LPAD(pv.minutofat, 2, '0'), ':00'), '%Y-%m-%d %H:%i:%s')
+                ELSE STR_TO_DATE(CONCAT(pv.dtfat, ' ', LPAD(pv.horafat, 2, '0'), ':', LPAD(pv.minutofat, 2, '0'), ':00'), '%Y%m%d %H:%i:%s')
+            END
+        ) >= DATE_SUB(NOW(), INTERVAL ? MINUTE)
+    ) OR ( 
+        (pv.dtfat IS NULL 
+         OR pv.horafat IS NULL 
+         OR pv.minutofat IS NULL) 
+        AND pv.data IS NOT NULL
+        AND ( 
+            CASE 
+                WHEN pv.data LIKE '%-%' 
+                THEN STR_TO_DATE(CONCAT(pv.data, ' 23:59:59'), '%Y-%m-%d %H:%i:%s')
+                ELSE STR_TO_DATE(CONCAT(pv.data, ' 23:59:59'), '%Y%m%d %H:%i:%s')
+            END
+        ) >= DATE_SUB(NOW(), INTERVAL ? MINUTE)
+    )";
+    $params[] = (int)$minutos;
+    $params[] = (int)$minutos;
+
     if ($filiais) {
-        $filiaisArray = explode(',', $filiais);
-        $placeholders = str_repeat('?,', count($filiaisArray) - 1) . '?';
-        $query .= " AND p.filial IN ($placeholders)";
-        $params = array_merge($params, $filiaisArray);
+        $filiaisArray = array_filter(array_map('trim', explode(',', $filiais)), fn($v) => $v !== '');
+        if (!empty($filiaisArray)) {
+            $placeholders = str_repeat('?,', count($filiaisArray) - 1) . '?';
+            $where[] = "pv.codfilial IN ($placeholders)";
+            foreach ($filiaisArray as $f) { $params[] = $f; }
+        }
     }
-    
-    $query .= " ORDER BY p.data DESC LIMIT ?";
+
+    $sql = "
+        SELECT
+            pv.numped       AS NUMPED,
+            pv.codfilial    AS CODFILIAL,
+            pv.numcaixa     AS NUMCAIXA,
+            pv.data         AS DATA,
+            pv.vltotal      AS VLTOTAL,
+            pv.codcli       AS CODCLI,
+            pv.cliente      AS CLIENTE,
+            pv.created_at   AS CREATED_AT
+        FROM pedidos_vendas pv
+        " . (count($where) ? ('WHERE ' . implode(' AND ', $where)) : '') . "
+        ORDER BY (
+            CASE 
+                WHEN pv.dtfat IS NOT NULL 
+                 AND pv.horafat IS NOT NULL 
+                 AND pv.minutofat IS NOT NULL
+                THEN (
+                    CASE WHEN pv.dtfat LIKE '%-%'
+                        THEN STR_TO_DATE(CONCAT(pv.dtfat, ' ', LPAD(pv.horafat, 2, '0'), ':', LPAD(pv.minutofat, 2, '0'), ':00'), '%Y-%m-%d %H:%i:%s')
+                        ELSE STR_TO_DATE(CONCAT(pv.dtfat, ' ', LPAD(pv.horafat, 2, '0'), ':', LPAD(pv.minutofat, 2, '0'), ':00'), '%Y%m%d %H:%i:%s')
+                    END
+                )
+                WHEN pv.data IS NOT NULL
+                THEN (
+                    CASE WHEN pv.data LIKE '%-%'
+                        THEN STR_TO_DATE(CONCAT(pv.data, ' 23:59:59'), '%Y-%m-%d %H:%i:%s')
+                        ELSE STR_TO_DATE(CONCAT(pv.data, ' 23:59:59'), '%Y%m%d %H:%i:%s')
+                    END
+                )
+                ELSE STR_TO_DATE('1970-01-01 00:00:00', '%Y-%m-%d %H:%i:%s')
+            END
+        ) DESC
+        LIMIT ?
+    ";
+
     $params[] = (int)$limit;
-    
-    $stmt = $conn->prepare($query);
+
+    $stmt = $conn->prepare($sql);
     $stmt->execute($params);
-    
-    $pedidos = [];
-    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        $pedidos[] = [
-            'NUMPED' => (int)$row['NUMPED'],
-            'CODFILIAL' => (int)$row['CODFILIAL'],
-            'NUMCAIXA' => (int)$row['NUMCAIXA'],
-            'VLTOTAL' => (float)$row['VLTOTAL'],
-            'DATA' => $row['DATA'],
-            'data_registro_produto' => $row['data_registro_produto'],
-            'vendedor' => (int)$row['vendedor'],
-            'created_at' => $row['created_at'],
-            'itens' => $row['itens'] // Campo JSON com os itens do pedido
-        ];
-    }
-    
+
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
     echo json_encode([
         'success' => true,
-        'data' => $pedidos
+        'data' => $rows,
     ]);
 
 } catch (Exception $e) {

@@ -895,39 +895,40 @@ function clearModalLogs() {
 }
 
 // Função para testar conexão no modal
-function testCaixaConnectionInModal() {
+async function testCaixaConnectionInModal() {
     const form = document.getElementById('caixaForm');
     const formData = new FormData(form);
     
-    const caixaData = {
-        filial: formData.get('filial'),
-        caixa: formData.get('caixa'),
-        milissegundos: formData.get('milissegundos'),
-        syncInterval: formData.get('syncInterval')
+    const caixaConfig = {
+        LCDBHOST: formData.get('lcdbHost') || document.getElementById('lcdbHost')?.value,
+        LCDBUSER: formData.get('lcdbUser') || document.getElementById('lcdbUser')?.value,
+        LCDBPASS: formData.get('lcdbPass') || document.getElementById('lcdbPass')?.value,
+        LCDBNAME: formData.get('lcdbName') || document.getElementById('lcdbName')?.value,
+        FILIAL: formData.get('filial') || document.getElementById('filial')?.value,
+        CAIXA: formData.get('caixa') || document.getElementById('caixa')?.value
     };
     
-    // Validar campos obrigatórios
-    if (!caixaData.filial || !caixaData.caixa) {
+    if (!caixaConfig.LCDBHOST || !caixaConfig.LCDBUSER || !caixaConfig.LCDBPASS || !caixaConfig.LCDBNAME) {
+        addModalLog('⚠️ Preencha host, usuário, senha e banco antes de testar', 'warning');
+        return;
+    }
+    if (!caixaConfig.FILIAL || !caixaConfig.CAIXA) {
         addModalLog('❌ Erro: Filial e Número do Caixa são obrigatórios', 'error');
         return;
     }
     
-    addModalLog('🔍 Iniciando teste de conexão...', 'info');
-    addModalLog(`📋 Testando caixa ${caixaData.caixa} da filial ${caixaData.filial}`, 'info');
+    addModalLog('🔍 Testando conexão...', 'info');
     
-    // Simular teste de conexão (aqui você pode implementar a lógica real)
-    setTimeout(() => {
-        // Simular resultado do teste
-        const success = Math.random() > 0.3; // 70% de chance de sucesso
-        
-        if (success) {
-            addModalLog('✅ Conexão testada com sucesso!', 'success');
-            addModalLog(`⚙️ Configurações: Milissegundos=${caixaData.milissegundos}, Intervalo=${caixaData.syncInterval}`, 'info');
+    try {
+        const result = await window.electronAPI.testConnection(caixaConfig);
+        if (result && result.success) {
+            addModalLog(result.message || '✅ Conexão testada com sucesso!', 'success');
         } else {
-            addModalLog('❌ Falha na conexão com o caixa', 'error');
-            addModalLog('💡 Verifique se as configurações estão corretas', 'warning');
+            addModalLog(`❌ Erro na conexão: ${result?.error || 'Falha desconhecida'}`, 'error');
         }
-    }, 1500);
+    } catch (error) {
+        addModalLog(`❌ Erro ao testar conexão: ${error.message}`, 'error');
+    }
 }
 
 // Expor funções globalmente para uso nos event handlers inline

@@ -41,8 +41,8 @@ try {
               FROM controle_envios_nps ce
               LEFT JOIN campanhas_nps c ON ce.campanha_id = c.id
               WHERE ce.status_envio = 'pendente' 
-              AND ce.data_elegivel <= NOW()
-              ORDER BY ce.data_elegivel ASC";
+              AND (ce.data_elegivel IS NULL OR ce.data_elegivel <= NOW())
+              ORDER BY COALESCE(ce.data_elegivel, NOW()) ASC";
     
     $stmt = $conn->prepare($query);
     $stmt->execute();

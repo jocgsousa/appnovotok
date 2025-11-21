@@ -157,39 +157,39 @@
                     <div class="form-grid">
                         <div class="form-group">
                             <label for="nome">Nome do Caixa:</label>
-                            <input type="text" id="nome" required placeholder="Ex: Caixa 202">
+                            <input type="text" id="nome" name="nome" required placeholder="Ex: Caixa 202">
                         </div>
                         <div class="form-group">
                             <label for="lcdbHost">Host do Banco:</label>
-                            <input type="text" id="lcdbHost" required placeholder="192.168.20.250:1521">
+                            <input type="text" id="lcdbHost" name="lcdbHost" required placeholder="192.168.20.250:1521">
                         </div>
                         <div class="form-group">
                             <label for="lcdbUser">Usuário do Banco:</label>
-                            <input type="text" id="lcdbUser" required placeholder="CAIXA">
+                            <input type="text" id="lcdbUser" name="lcdbUser" required placeholder="CAIXA">
                         </div>
                         <div class="form-group">
                             <label for="lcdbPass">Senha do Banco:</label>
-                            <input type="password" id="lcdbPass" required placeholder="CAIXA">
+                            <input type="password" id="lcdbPass" name="lcdbPass" required placeholder="CAIXA">
                         </div>
                         <div class="form-group">
                             <label for="lcdbName">Nome do Banco:</label>
-                            <input type="text" id="lcdbName" required placeholder="XE">
+                            <input type="text" id="lcdbName" name="lcdbName" required placeholder="XE">
                         </div>
                         <div class="form-group">
                             <label for="filial">Filial:</label>
-                            <input type="number" id="filial" required placeholder="2">
+                            <input type="number" id="filial" name="filial" required placeholder="2">
                         </div>
                         <div class="form-group">
                             <label for="caixa">Número do Caixa:</label>
-                            <input type="number" id="caixa" required placeholder="202">
+                            <input type="number" id="caixa" name="caixa" required placeholder="202">
                         </div>
                         <div class="form-group">
                             <label for="milissegundos">Milissegundos:</label>
-                            <input type="number" id="milissegundos" value="60000" required>
+                            <input type="number" id="milissegundos" name="milissegundos" value="60000" required>
                         </div>
                         <div class="form-group">
                             <label for="syncInterval">Intervalo de Sync:</label>
-                            <input type="number" id="syncInterval" value="60000" required>
+                            <input type="number" id="syncInterval" name="syncInterval" value="60000" required>
                         </div>
                     </div>
                 </form>
@@ -207,7 +207,7 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="closeCaixaModal()">❌ Cancelar</button>
                 <button type="button" id="cancelCaixaEdit" class="btn btn-warning" onclick="cancelEdit()" style="display: none;">🚫 Cancelar Edição</button>
-                <button type="submit" id="saveCaixaBtn" class="btn btn-primary">💾 Salvar Caixa</button>
+                <button type="submit" id="saveCaixaBtn" class="btn btn-primary" form="caixaForm">💾 Salvar Caixa</button>
             </div>
         </div>
     </div>

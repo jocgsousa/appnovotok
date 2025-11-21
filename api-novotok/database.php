@@ -34,6 +34,10 @@ class Database {
             // Configurações para preservar a precisão decimal
             $this->conn->setAttribute(PDO::MYSQL_ATTR_INIT_COMMAND, "SET SESSION sql_mode='TRADITIONAL,NO_ENGINE_SUBSTITUTION'");
             
+            // Unificar collation da conexão para evitar mix de collations em comparações
+            $this->conn->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+            $this->conn->exec("SET SESSION collation_connection = 'utf8mb4_unicode_ci'");
+            
             // Configurar formato numérico para garantir que decimais sejam preservados
             // $this->conn->exec("SET SESSION DECIMAL_POINT='.'");  // Remover - variável não suportada
             // $this->conn->exec("SET SESSION lc_numeric='en_US'");  // Remover - variável não suportada

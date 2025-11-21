@@ -16,7 +16,6 @@ let npsAPI = null;
  * Escreve log com timestamp
  */
 function writeLog(message, level = 'INFO') {
-    return false;
     const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
     console.log(`[${timestamp}] [${level}] ${message}`);
 }
@@ -75,6 +74,11 @@ async function consolidarEstadosConversa() {
                     controle_envio_id: controle.id,
                     instancia_id: controle.instancia_id,
                     celular: numeroParaSalvar,
+                    // Fallbacks para localização automática do controle no servidor
+                    pedido_id: controle.pedido_id,
+                    numero_pedido: controle.numero_pedido,
+                    codcli: controle.codcli,
+                    campanha_id: controle.campanha_id,
                     pergunta_atual_id: null,  // NULL em vez de 0 para evitar constraint violation
                     ordem_resposta: 0,
                     aguardando_resposta: true,
@@ -85,22 +89,32 @@ async function consolidarEstadosConversa() {
                 writeLog(`🔧 Criando estado para controle ${controle.id} (${numeroParaSalvar})`);
                 
                 const resultado = await npsAPI.createEstadoConversa(estadoData);
+                const novoId = (resultado && resultado.estado && resultado.estado.id) || resultado.id || null;
                 
-                if (resultado.success) {
-                    writeLog(`✅ Estado criado com sucesso (ID: ${resultado.estado.id})`);
+                if (resultado && resultado.success) {
+                    writeLog(`✅ Estado criado com sucesso (ID: ${novoId !== null ? novoId : 'N/A'})`);
                     criados++;
                 } else {
-                    if (resultado.error && resultado.error.includes('Duplicate entry')) {
+                    const errMsg = resultado && (resultado.error || resultado.message) || 'Erro desconhecido';
+                    if (errMsg.includes('Duplicate entry')) {
                         writeLog(`ℹ️ Estado já existe para controle ${controle.id} (ignorado)`);
                     } else {
-                        writeLog(`❌ Erro ao criar estado para controle ${controle.id}: ${resultado.error}`, 'ERROR');
+                        writeLog(`❌ Erro ao criar estado para controle ${controle.id}: ${errMsg}`, 'ERROR');
                         erros++;
                     }
                 }
                 
             } catch (error) {
-                writeLog(`❌ Erro ao processar controle ${controle.id}: ${error.message}`, 'ERROR');
-                erros++;
+                const msg = error && error.message ? error.message : String(error);
+                // Tratar especificamente erro de FK ou controle inexistente
+                if (msg.includes('controle_envio_id') && msg.includes('não encontrado')) {
+                    writeLog(`⏭️ Controle ${controle.id} não existe mais em controle_envios_nps (pulando)`, 'WARN');
+                } else if (msg.toLowerCase().includes('foreign key') || msg.toLowerCase().includes('constraint fails')) {
+                    writeLog(`⏭️ Erro de integridade referencial ao criar estado para controle ${controle.id} (pulando)`, 'WARN');
+                } else {
+                    writeLog(`❌ Erro ao processar controle ${controle.id}: ${msg}`, 'ERROR');
+                    erros++;
+                }
             }
         }
 

@@ -89,13 +89,22 @@ function validarHorarioEnvio(horarioInicio, horarioFim) {
     const horaAtual = agora.getHours().toString().padStart(2, '0') + ':' + agora.getMinutes().toString().padStart(2, '0');
     
     // Converter horários para formato comparável (HH:MM)
-    const inicioFormatado = horarioInicio ? horarioInicio.substring(0, 5) : '09:00';
-    const fimFormatado = horarioFim ? horarioFim.substring(0, 5) : '18:00';
+    const defaultInicio = (process.env.NPS_DEFAULT_HORARIO_INICIO || '00:00').substring(0,5);
+    const defaultFim = (process.env.NPS_DEFAULT_HORARIO_FIM || '23:59').substring(0,5);
+    const inicioFormatado = (horarioInicio && horarioInicio.trim() !== '') ? horarioInicio.substring(0, 5) : defaultInicio;
+    const fimFormatado = (horarioFim && horarioFim.trim() !== '') ? horarioFim.substring(0, 5) : defaultFim;
     
     writeLog(`🕐 Validando horário: Atual=${horaAtual}, Permitido=${inicioFormatado}-${fimFormatado}`);
     
-    // Comparar horários
-    const dentroDoHorario = horaAtual >= inicioFormatado && horaAtual <= fimFormatado;
+    // Comparar horários (suporte a janela que cruza meia-noite)
+    let dentroDoHorario;
+    if (inicioFormatado <= fimFormatado) {
+      // Janela no mesmo dia
+      dentroDoHorario = horaAtual >= inicioFormatado && horaAtual <= fimFormatado;
+    } else {
+      // Janela cruza meia-noite (ex: 22:00-06:00)
+      dentroDoHorario = (horaAtual >= inicioFormatado) || (horaAtual <= fimFormatado);
+    }
     
     if (!dentroDoHorario) {
       writeLog(`⏰ Fora do horário de envio: ${horaAtual} não está entre ${inicioFormatado} e ${fimFormatado}`);
@@ -108,6 +117,78 @@ function validarHorarioEnvio(horarioInicio, horarioFim) {
     writeLog(`Erro ao validar horário de envio: ${error.message}`);
     // Em caso de erro, permitir envio (comportamento padrão)
     return true;
+  }
+}
+
+// Helper: calcula a próxima data elegível com base na janela da campanha
+function calcularProximaDataElegivel(horarioInicio, horarioFim) {
+  try {
+    const agora = new Date();
+    const defaultInicio = (process.env.NPS_DEFAULT_HORARIO_INICIO || '00:00').substring(0, 5);
+    const defaultFim = (process.env.NPS_DEFAULT_HORARIO_FIM || '23:59').substring(0, 5);
+    const inicio = (horarioInicio && horarioInicio.trim() !== '') ? horarioInicio.substring(0, 5) : defaultInicio;
+    const fim = (horarioFim && horarioFim.trim() !== '') ? horarioFim.substring(0, 5) : defaultFim;
+
+    const [ih, im] = inicio.split(':').map(n => parseInt(n, 10));
+    const [fh, fm] = fim.split(':').map(n => parseInt(n, 10));
+
+    const hojeInicio = new Date(agora);
+    hojeInicio.setHours(ih, im, 0, 0);
+    const hojeFim = new Date(agora);
+    hojeFim.setHours(fh, fm, 0, 0);
+
+    const cruzaMeiaNoite = inicio > fim;
+
+    // Se por algum motivo estiver dentro do horário, retornar agora
+    if (validarHorarioEnvio(inicio, fim)) {
+      return agora;
+    }
+
+    let proxima;
+    if (!cruzaMeiaNoite) {
+      // Janela no mesmo dia
+      if (agora < hojeInicio) {
+        proxima = hojeInicio; // ainda não começou hoje
+      } else {
+        proxima = new Date(hojeInicio);
+        proxima.setDate(proxima.getDate() + 1); // já passou o fim, agendar amanhã no início
+      }
+    } else {
+      // Janela cruza meia-noite; fora da janela significa entre fim e início
+      if (agora < hojeInicio) {
+        // exemplo: 14:00 com janela 22:00-06:00
+        proxima = hojeInicio;
+      } else {
+        // fallback seguro: agendar para o próximo início configurado
+        proxima = hojeInicio;
+      }
+    }
+
+    writeLog(`📅 Próxima data elegível calculada: ${proxima.toISOString()} (janela ${inicio}-${fim})`);
+    return proxima;
+  } catch (error) {
+    writeLog(`Erro ao calcular próxima data elegível: ${error.message}`);
+    const fallback = new Date();
+    fallback.setDate(fallback.getDate() + 1);
+    return fallback;
+  }
+}
+
+// Helper: formata Date para DATETIME MySQL local (YYYY-MM-DD HH:MM:SS)
+function formatDateTimeMySQL(date) {
+  try {
+    const pad = (n) => n.toString().padStart(2, '0');
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    const seconds = pad(date.getSeconds());
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  } catch (error) {
+    writeLog(`Erro ao formatar data para MySQL: ${error.message}`);
+    // Fallback seguro usando ISO convertido para formato MySQL
+    return new Date().toISOString().substring(0, 19).replace('T', ' ');
   }
 }
 
@@ -423,6 +504,25 @@ async function finalizarConversa(estadoConversaId, status) {
   }
 }
 
+// Helper: serializa filiais (CSV) a partir de array ou string JSON
+function serializeFiliais(filiaisAtivas) {
+  if (!filiaisAtivas) return '';
+  if (Array.isArray(filiaisAtivas)) return filiaisAtivas.join(',');
+  if (typeof filiaisAtivas === 'string') {
+    const s = filiaisAtivas.trim();
+    if (s.startsWith('[')) {
+      try {
+        const arr = JSON.parse(s);
+        if (Array.isArray(arr)) return arr.join(',');
+      } catch (_) {
+        // mantém string original
+      }
+    }
+    return s;
+  }
+  return String(filiaisAtivas);
+}
+
 // Função para buscar novos pedidos do MySQL em tempo real (APENAS pedidos recém-criados)
 async function buscarNovosPedidosDB() {
   try {
@@ -455,11 +555,16 @@ async function buscarNovosPedidosDB() {
       
       console.log(`✅ Campanha "${campanha.nome}" está ativa e será processada`);
       
-      // Buscar pedidos recentes usando a API
-      const pedidos = await npsAPI.getPedidosRecentes({
-        minutos: 5,
-        filiais: campanha.filiais_ativas,
-        limit: 10
+      // Janela configurável de minutos (default 60 para evitar perdas)
+      const janelaMinutos = Number(process.env.NPS_MINUTOS_VENDAS_RECENTES || process.env.NPS_MINUTOS_RECENTES || 60);
+      const filiaisParam = serializeFiliais(campanha.filiais_ativas);
+
+      // Buscar pedidos recentes usando a API (header MySQL)
+      writeLog(`⏱️  Janela de pedidos recentes para campanha "${campanha.nome}": ${janelaMinutos} minuto(s)`);
+      const pedidos = await npsAPI.getPedidosVendasRecentes({
+        minutos: janelaMinutos,
+        filiais: filiaisParam,
+        limit: 50
       });
       
       console.log(`📋 Campanha "${campanha.nome}": ${pedidos.length} pedidos recentes encontrados`);
@@ -470,41 +575,42 @@ async function buscarNovosPedidosDB() {
         try {
           console.log(`   🔍 Verificando pedido ${pedido.NUMPED} (Filial: ${pedido.CODFILIAL})`);
           
-          // Extrair informações do cliente dos itens (JSON) ANTES de verificar controle
+          // Extrair informações do cliente do header (pedidos_vendas)
           let clienteInfo = null;
-          
-          if (pedido.itens) {
+          const codcliHeader = pedido.CODCLI;
+          if (codcliHeader && codcliHeader !== 1) {
             try {
-              const itens = JSON.parse(pedido.itens);
-              
-              // Buscar o primeiro item com informações válidas de cliente
-              for (const item of itens) {
-                // Verificar tanto CODCLI (maiúsculo) quanto codcli (minúsculo)
-                const codcli = item.CODCLI || item.codcli;
-                
-                if (codcli && codcli !== 1) {
-                  // Buscar dados do cliente na tabela PCCLIENT do Oracle
-                  try {
-                    const clienteOracle = await buscarDadosCliente(codcli);
-                    
-                    if (clienteOracle && clienteOracle.TELCELENT) {
-                      clienteInfo = {
-                        codcli: codcli,
-                        nome: clienteOracle.CLIENTE || `Cliente ${codcli}`,
-                        telefone: clienteOracle.TELCELENT
-                      };
-                      break;
-                    }
-                  } catch (error) {
-                    console.error(`      ❌ Erro ao buscar cliente ${codcli} no Oracle: ${error.message}`);
-                  }
-                }
+              const clienteOracle = await buscarDadosCliente(codcliHeader);
+              if (clienteOracle && clienteOracle.TELCELENT) {
+                clienteInfo = {
+                  codcli: codcliHeader,
+                  nome: pedido.CLIENTE || clienteOracle.CLIENTE || `Cliente ${codcliHeader}`,
+                  telefone: clienteOracle.TELCELENT
+                };
               }
-            } catch (e) {
-              writeLog(`Erro ao processar itens do pedido ${pedido.NUMPED}: ${e.message}`);
+            } catch (error) {
+              console.error(`      ❌ Erro ao buscar cliente ${codcliHeader} no Oracle: ${error.message}`);
             }
+          } else {
+            console.log('      ⚠️  CODCLI inválido ou não disponível no header');
           }
           
+          // Fallback: usar telefone do MySQL (clientes.billingPhone) quando Oracle falhar ou não tiver TELCELENT
+          if (!clienteInfo && pedido.BILLING_PHONE) {
+            const billingPhone = String(pedido.BILLING_PHONE).replace(/\D/g, '');
+            if (billingPhone.length >= 10) {
+              clienteInfo = {
+                codcli: codcliHeader || pedido.CODCLI,
+                nome: pedido.CLIENTE || `Cliente ${codcliHeader || ''}`,
+                telefone: billingPhone
+              };
+              console.log(`      🔄 Fallback aplicado: usando billingPhone do MySQL (${billingPhone.length} dígitos)`);
+              writeLog(`Fallback telefone (MySQL) para pedido ${pedido.NUMPED || 'N/A'}: ${billingPhone}`);
+            } else {
+              console.log(`      ❌ Fallback billingPhone inválido (${billingPhone.length} dígitos)`);
+            }
+          }
+
           // Se encontrou cliente válido, adicionar à lista
           if (clienteInfo && clienteInfo.telefone && clienteInfo.telefone.trim() !== '') {
             const telefone = clienteInfo.telefone.replace(/\D/g, '');
@@ -516,7 +622,7 @@ async function buscarNovosPedidosDB() {
                 NUMPED: pedido.NUMPED,
                 CODCLI: clienteInfo.codcli,
                 CODFILIAL: pedido.CODFILIAL,
-                NUMCAIXA: pedido.NUMCAIXA,
+                NUMCAIXA: pedido.NUMCAIXA || 0,
                 DATA: pedido.DATA,
                 VLTOTAL: pedido.VLTOTAL || 0,
                 CLIENTE: clienteInfo.nome,
@@ -620,83 +726,79 @@ async function reiniciarConversa(controleEnvioId) {
 async function processarEnviosAgendadosHorario() {
   try {
     writeLog('🕐 Processando envios NPS agendados por horário...');
-    
-    // Buscar envios agendados usando a API
+
     const enviosAgendados = await npsAPI.getEnviosAgendados();
-    
-    if (enviosAgendados.length === 0) {
+    if (!enviosAgendados || enviosAgendados.length === 0) {
       writeLog('ℹ️  Nenhum envio NPS agendado por horário encontrado');
       return;
     }
-    
+
     writeLog(`📋 Encontrados ${enviosAgendados.length} envios agendados por horário`);
-    
+
     for (const envio of enviosAgendados) {
       try {
-        // Buscar dados da campanha para validar período
-        let campanhaValida = true;
-        let motivoInvalida = '';
-        
-        if (envio.campanha_id) {
-          try {
-            const campanha = await npsAPI.getCampanha(envio.campanha_id);
-            if (campanha) {
-              const validacaoPeriodo = validarPeriodoCampanha(campanha);
-              if (!validacaoPeriodo.ativa) {
-                campanhaValida = false;
-                motivoInvalida = validacaoPeriodo.motivo;
-                writeLog(`⏭️  Envio ${envio.id} pulado: ${motivoInvalida}`);
-              }
-            }
-          } catch (error) {
-            writeLog(`Erro ao validar campanha do envio ${envio.id}: ${error.message}`);
-          }
-        }
-        
-        // Só processar se a campanha estiver válida
-        if (!campanhaValida) {
-          // Marcar envio como cancelado por período inválido
+        // Carregar dados completos da campanha
+        const dadosCampanha = await npsAPI.getCampanhaPorId(envio.campanha_id);
+        if (!dadosCampanha) {
+          writeLog(`⚠️ Campanha ${envio.campanha_id} não encontrada para envio ${envio.id}`);
           await npsAPI.updateControleEnvio(envio.id, {
-            status_envio: 'cancelado',
-            ultimo_erro: motivoInvalida
+            status_envio: 'erro',
+            ultimo_erro: `Campanha ${envio.campanha_id} não encontrada`
           });
           continue;
         }
-        
-        // Validar se agora está dentro do horário permitido
-        if (validarHorarioEnvio(envio.horario_envio_inicio, envio.horario_envio_fim)) {
-          // Processar envio usando a API
+
+        // Validar período de campanha
+        const validacaoPeriodo = validarPeriodoCampanha(dadosCampanha);
+        if (!validacaoPeriodo.ativa) {
           await npsAPI.updateControleEnvio(envio.id, {
-            status_envio: 'processado',
-            data_processamento: new Date().toISOString()
+            status_envio: 'cancelado',
+            ultimo_erro: validacaoPeriodo.motivo
           });
-          
-          writeLog(`✅ Envio agendado processado: ${envio.id}`);
-        } else {
-          // Reagendar para próximo dia usando a API
-          const proximaData = new Date();
-          proximaData.setDate(proximaData.getDate() + 1);
-          
-          await npsAPI.updateControleEnvio(envio.id, {
-            data_elegivel: proximaData.toISOString()
-          });
-          
-          writeLog(`📅 Reagendado para próximo dia: ${envio.id}`);
+          writeLog(`⏭️  Envio ${envio.id} cancelado: ${validacaoPeriodo.motivo}`);
+          continue;
         }
+
+        // Validar horário de envio
+        console.log(`🕐 Janela campanha (agendados): ${String(dadosCampanha.horario_envio_inicio).substring(0,5)} - ${String(dadosCampanha.horario_envio_fim).substring(0,5)}`);
+        if (!validarHorarioEnvio(dadosCampanha.horario_envio_inicio, dadosCampanha.horario_envio_fim)) {
+          const proximaData = calcularProximaDataElegivel(dadosCampanha.horario_envio_inicio, dadosCampanha.horario_envio_fim);
+          await npsAPI.updateControleEnvio(envio.id, {
+            data_elegivel: formatDateTimeMySQL(proximaData),
+            status_envio: 'pendente'
+          });
+          writeLog(`📅 Envio ${envio.id} reagendado para ${proximaData.toLocaleString()} (status pendente)`);
+          continue;
+        }
+
+        // Montar objeto de pedido no formato esperado por enviarMensagemNPSIndividual
+        const pedido = {
+          NUMPED: envio.pedido_id || envio.numero_pedido || envio.id,
+          CODCLI: envio.codcli,
+          CLIENTE: envio.nome_cliente || 'Cliente',
+          TELCELENT: envio.celular,
+          VLTOTAL: envio.valor_total || envio.valor_pedido || 0,
+          DATA: envio.data_pedido || new Date().toISOString(),
+          CODFILIAL: envio.filial || envio.codfilial || null,
+          NUMCAIXA: envio.caixa || envio.numcaixa || null,
+          instancia_id: envio.instancia_id
+        };
+
+        // Enviar mensagem NPS
+        await enviarMensagemNPSIndividual(envio.id, pedido, dadosCampanha);
+        writeLog(`✅ Envio agendado ${envio.id} processado e enviado com sucesso`);
+
       } catch (error) {
         writeLog(`Erro ao processar envio agendado ${envio.id}: ${error.message}`);
-        
-        // Marcar como erro usando a API
         await npsAPI.updateControleEnvio(envio.id, {
           status_envio: 'erro',
           ultimo_erro: error.message
         });
       }
     }
-    
+
   } catch (error) {
-    writeLog(`Erro ao processar envios agendados por horário: ${error.message}`);
-    throw error;
+    writeLog(`Erro geral no processamento de envios agendados: ${error.message}`);
   }
 }
 
@@ -779,6 +881,7 @@ async function iniciarMonitoramentoContinuo() {
   
   // Executar imediatamente na primeira vez
   await processarDisparoImediato();
+  await processarEnviosAgendadosHorario();
   
   // Configurar intervalo baseado na variável de ambiente
   setInterval(async () => {
@@ -786,6 +889,8 @@ async function iniciarMonitoramentoContinuo() {
       const agora = new Date().toLocaleString('pt-BR');
       writeLog(`\n⏰ [${agora}] Verificando novos pedidos...`);
       await processarDisparoImediato();
+      writeLog('⏱️ Processando envios pendentes elegíveis por horário...');
+      await processarEnviosAgendadosHorario();
     } catch (error) {
       writeLog(`❌ Erro no monitoramento contínuo: ${error.message}`);
     }
@@ -901,6 +1006,11 @@ async function garantirEstadoConversa(controleId, pedido, dadosCampanha) {
       controle_envio_id: controleId,
       instancia_id: instanciaCorreta || pedido.instancia_id,
       celular: numeroParaSalvar,
+      // Fallbacks para localização automática do controle no servidor
+      pedido_id: pedido.NUMPED,
+      numero_pedido: pedido.NUMPED,
+      codcli: pedido.CODCLI,
+      campanha_id: pedido.campanha_id,
       pergunta_atual_id: null,  // NULL em vez de 0 para evitar constraint violation
       ordem_resposta: 0,
       aguardando_resposta: true,
@@ -1009,6 +1119,23 @@ async function processarPedidoIndividualNPS(pedido) {
       writeLog(`Erro na validação do número ${numeroWhatsApp} - Pedido ${pedido.NUMPED}: ${validationError.message}`);
     }
     
+    // Determinar data_elegivel para criação do controle (evita depender de atualização posterior)
+    let dataElegivelCriacao = null;
+    if (dadosCampanha.dias_apos_compra === 0 || dadosCampanha.disparo_imediato) {
+      // Respeitar janela de horário da campanha
+      const dentroHorarioCriacao = validarHorarioEnvio(dadosCampanha.horario_envio_inicio, dadosCampanha.horario_envio_fim);
+      if (!dentroHorarioCriacao) {
+        const proximaData = calcularProximaDataElegivel(dadosCampanha.horario_envio_inicio, dadosCampanha.horario_envio_fim);
+        dataElegivelCriacao = formatDateTimeMySQL(proximaData);
+        writeLog(`⏰ Fora do horário na criação; definindo data_elegivel inicial: ${new Date(dataElegivelCriacao).toLocaleString()}`);
+      }
+    } else {
+      const baseData = new Date(pedido.DATA);
+      baseData.setDate(baseData.getDate() + dadosCampanha.dias_apos_compra);
+      dataElegivelCriacao = formatDateTimeMySQL(baseData);
+      writeLog(`📆 Campanha com dias_apos_compra=${dadosCampanha.dias_apos_compra}; data_elegivel inicial: ${baseData.toLocaleString()}`);
+    }
+
     // Criar controle de envio usando a API (apenas se número for válido)
     const controleData = {
       campanha_id: pedido.campanha_id,
@@ -1021,7 +1148,8 @@ async function processarPedidoIndividualNPS(pedido) {
       filial: pedido.CODFILIAL,
       caixa: pedido.NUMCAIXA,
       valor_pedido: pedido.VLTOTAL,
-      status_envio: 'pendente'
+      status_envio: 'pendente',
+      ...(dataElegivelCriacao ? { data_elegivel: dataElegivelCriacao } : {})
     };
     
     const controleResult = await npsAPI.createControleEnvio(controleData);
@@ -1066,7 +1194,7 @@ async function processarPedidoIndividualNPS(pedido) {
       if (controleExistente && controleExistente.controle) {
         const statusAtual = controleExistente.controle.status_envio;
         // Permitir reenvio se status for: pendente, erro, falha, ou agendado
-        const statusPermiteReenvio = ['pendente', 'erro', 'falha', 'agendado', 'agendado_horario'];
+        const statusPermiteReenvio = ['pendente', 'erro'];
         if (statusPermiteReenvio.includes(statusAtual)) {
           deveEnviarMensagem = true;
           writeLog(`🔄 Controle existente com status '${statusAtual}' permite reenvio para pedido ${pedido.NUMPED}`);
@@ -1079,8 +1207,11 @@ async function processarPedidoIndividualNPS(pedido) {
     if (deveEnviarMensagem) {
       // Se for disparo imediato (dias_apos_compra = 0), verificar horário e enviar agora
       if (dadosCampanha.dias_apos_compra === 0 || dadosCampanha.disparo_imediato) {
-        // Validar horário de envio antes de enviar
-        if (validarHorarioEnvio(dadosCampanha.horario_envio_inicio, dadosCampanha.horario_envio_fim)) {
+        // Mesmo para campanhas com disparo_imediato, respeitar janela de horário da campanha
+        console.log(`🕐 Janela campanha: ${String(dadosCampanha.horario_envio_inicio).substring(0,5)} - ${String(dadosCampanha.horario_envio_fim).substring(0,5)}`);
+        const dentroHorario = validarHorarioEnvio(dadosCampanha.horario_envio_inicio, dadosCampanha.horario_envio_fim);
+        console.log(`   ✅ Dentro do horário? ${dentroHorario}`);
+        if (dentroHorario) {
           try {
             await enviarMensagemNPSIndividual(controleId, pedido, dadosCampanha);
             writeLog(`📱 Mensagem NPS enviada imediatamente para pedido ${pedido.NUMPED}`);
@@ -1090,23 +1221,25 @@ async function processarPedidoIndividualNPS(pedido) {
           }
         } else {
           // Fora do horário - agendar para próximo horário válido
-          const proximaData = new Date();
-          proximaData.setDate(proximaData.getDate() + 1);
+          const proximaData = calcularProximaDataElegivel(dadosCampanha.horario_envio_inicio, dadosCampanha.horario_envio_fim);
           
+          // Resagendar para próxima janela válida respetando campanha
           await npsAPI.updateControleEnvio(controleId, {
-            data_elegivel: proximaData.toISOString(),
-            status_envio: 'agendado_horario'
+            data_elegivel: formatDateTimeMySQL(proximaData),
+            status_envio: 'pendente'
           });
           
-          writeLog(`📅 Pedido ${pedido.NUMPED} agendado para próximo horário válido (estado de conversa já criado)`);
+          writeLog(`📅 Pedido ${pedido.NUMPED} agendado para ${proximaData.toLocaleString()} (estado de conversa já criado, status pendente)`);
         }
       } else {
         // Agendar para envio futuro
         const dataElegivel = new Date(pedido.DATA);
         dataElegivel.setDate(dataElegivel.getDate() + dadosCampanha.dias_apos_compra);
         
+        // Definir data elegível futura conforme dias_apos_compra
         await npsAPI.updateControleEnvio(controleId, {
-          data_elegivel: dataElegivel.toISOString()
+          data_elegivel: formatDateTimeMySQL(dataElegivel),
+          status_envio: 'pendente'
         });
         
         writeLog(`Pedido ${pedido.NUMPED} agendado para envio em ${dadosCampanha.dias_apos_compra} dias (estado de conversa já criado)`);
@@ -1154,6 +1287,22 @@ async function processarPedidoParaNPS(pedido) {
       return;
     }
     
+    // Definir data_elegivel inicial para criação do controle
+    let dataElegivelCriacaoPara = null;
+    if (dadosCampanha.dias_apos_compra === 0 || dadosCampanha.disparo_imediato) {
+      const dentroHorarioCriacao = validarHorarioEnvio(dadosCampanha.horario_envio_inicio, dadosCampanha.horario_envio_fim);
+      if (!dentroHorarioCriacao) {
+        const proximaData = calcularProximaDataElegivel(dadosCampanha.horario_envio_inicio, dadosCampanha.horario_envio_fim);
+        dataElegivelCriacaoPara = formatDateTimeMySQL(proximaData);
+        writeLog(`⏰ Fora do horário (paraNPS); data_elegivel inicial: ${proximaData.toLocaleString()}`);
+      }
+    } else {
+      const baseData = new Date(pedido.DATA);
+      baseData.setDate(baseData.getDate() + dadosCampanha.dias_apos_compra);
+      dataElegivelCriacaoPara = formatDateTimeMySQL(baseData);
+      writeLog(`📆 (paraNPS) dias_apos_compra=${dadosCampanha.dias_apos_compra}; data_elegivel: ${baseData.toLocaleString()}`);
+    }
+
     // Criar controle de envio usando a API
     const controleData = {
       campanha_id: pedido.campanha_id,
@@ -1166,7 +1315,8 @@ async function processarPedidoParaNPS(pedido) {
       filial: pedido.CODFILIAL || null,
       caixa: pedido.NUMCAIXA || null,
       valor_pedido: pedido.VLTOTAL,
-      status_envio: 'pendente'
+      status_envio: 'pendente',
+      ...(dataElegivelCriacaoPara ? { data_elegivel: dataElegivelCriacaoPara } : {})
     };
     
     const controleResult = await npsAPI.createControleEnvio(controleData);
@@ -1228,7 +1378,7 @@ async function enviarMensagemNPSIndividual(controleId, pedido, dadosCampanha) {
         writeLog(`Número ${numeroWhatsApp} não possui conta WhatsApp - Controle ${controleId}: ${motivo}`);
         
         // Atualizar status do controle para 'numero_invalido'
-        await npsAPI.atualizarControleEnvio(controleId, {
+        await npsAPI.updateControleEnvio(controleId, {
           status_envio: 'numero_invalido',
           data_envio: new Date().toISOString().slice(0, 19).replace('T', ' '),
           ultimo_erro: `Número não possui conta WhatsApp: ${motivo}`
@@ -1255,7 +1405,7 @@ async function enviarMensagemNPSIndividual(controleId, pedido, dadosCampanha) {
           validationError.response.data && !validationError.response.data.hasWhatsApp) {
         console.log(`❌ Validação confirmou que número não possui WhatsApp - cancelando envio`);
         
-        await npsAPI.atualizarControleEnvio(controleId, {
+        await npsAPI.updateControleEnvio(controleId, {
           status_envio: 'numero_invalido',
           data_envio: new Date().toISOString().slice(0, 19).replace('T', ' '),
           ultimo_erro: `Número não possui conta WhatsApp (erro na validação): ${validationError.message}`
@@ -1291,7 +1441,8 @@ async function enviarMensagemNPSIndividual(controleId, pedido, dadosCampanha) {
         response = await axios.post(`${process.env.API_LOCAL_WHATSAPP}/api/instances/${pedido.instancia_id}/send-media`, {
           to: numeroWhatsApp,
           message: mensagemCompleta,
-          media: mediaData
+          media: mediaData,
+          idempotencyKey: `nps:${controleId}:initial`
         });
       } else {
         console.log(`📝 Campanha sem imagem, enviando mensagem de texto NPS...`);
@@ -1299,7 +1450,8 @@ async function enviarMensagemNPSIndividual(controleId, pedido, dadosCampanha) {
         // Enviar mensagem de texto via WhatsApp Manager
         response = await axios.post(`${process.env.API_LOCAL_WHATSAPP}/api/instances/${pedido.instancia_id}/send-message`, {
           to: numeroWhatsApp,
-          message: mensagemCompleta
+          message: mensagemCompleta,
+          idempotencyKey: `nps:${controleId}:initial`
         });
       }
       
@@ -1381,7 +1533,8 @@ async function enviarMensagemNPS(controleId, pedido) {
         response = await axios.post(`${process.env.API_LOCAL_WHATSAPP}/api/instances/${pedido.instancia_id}/send-media`, {
           to: numeroWhatsApp,
           message: mensagem,
-          media: mediaData
+          media: mediaData,
+          idempotencyKey: `nps:${controleId}:initial`
         });
       } else {
         console.log(`📝 Campanha sem imagem, enviando apenas texto...`);
@@ -1389,7 +1542,8 @@ async function enviarMensagemNPS(controleId, pedido) {
         // Enviar via WhatsApp Manager (texto apenas)
         response = await axios.post(`${process.env.API_LOCAL_WHATSAPP}/api/instances/${pedido.instancia_id}/send-message`, {
           to: numeroWhatsApp,
-          message: mensagem
+          message: mensagem,
+          idempotencyKey: `nps:${controleId}:initial`
         });
       }
       
@@ -1628,7 +1782,8 @@ async function processarRespostaWhatsApp(numeroRemetente, instanciaId, mensagem,
         const axios = require('axios');
         const responseWhatsApp = await axios.post(`${process.env.API_LOCAL_WHATSAPP}/api/instances/${conversaAtiva.instancia_id}/send-message`, {
           to: numeroRemetente,
-          message: mensagemOrientacao
+          message: mensagemOrientacao,
+          idempotencyKey: `nps:${conversaAtiva.controle_envio_id}:orientacao:${messageId}`
         });
         
         if (responseWhatsApp.data.success) {
@@ -1689,7 +1844,8 @@ async function processarRespostaWhatsApp(numeroRemetente, instanciaId, mensagem,
           const axios = require('axios');
           const responseWhatsApp = await axios.post(`${process.env.API_LOCAL_WHATSAPP}/api/instances/${conversaAtiva.instancia_id}/send-message`, {
             to: numeroRemetente,
-            message: mensagemFinal
+            message: mensagemFinal,
+            idempotencyKey: `nps:${conversaAtiva.controle_envio_id}:final`
           });
           
           if (responseWhatsApp.data.success) {
@@ -1708,7 +1864,8 @@ async function processarRespostaWhatsApp(numeroRemetente, instanciaId, mensagem,
           const axios = require('axios');
           const responseWhatsApp = await axios.post(`${process.env.API_LOCAL_WHATSAPP}/api/instances/${conversaAtiva.instancia_id}/send-message`, {
             to: numeroRemetente,
-            message: mensagemPadrao
+            message: mensagemPadrao,
+            idempotencyKey: `nps:${conversaAtiva.controle_envio_id}:final`
           });
           
           if (responseWhatsApp.data.success) {
@@ -1754,107 +1911,7 @@ async function processarRespostaWhatsApp(numeroRemetente, instanciaId, mensagem,
   }
 }
 
-// Função para processar envios agendados pendentes
-async function processarEnviosAgendadosHorario() {
-  try {
-    console.log('🔄 Iniciando processamento de envios agendados...');
-    writeLog('Iniciando processamento de envios agendados');
-    
-    // Buscar envios agendados via API
-    const enviosAgendados = await npsAPI.getEnviosAgendados();
-    
-    if (!enviosAgendados || enviosAgendados.length === 0) {
-      console.log('ℹ️  Nenhum envio agendado encontrado');
-      return;
-    }
-    
-    console.log(`📋 Encontrados ${enviosAgendados.length} envios agendados para processar`);
-    
-    let processados = 0;
-    let erros = 0;
-    
-    for (const envio of enviosAgendados) {
-      try {
-        console.log(`📤 Processando envio agendado ID: ${envio.id}`);
-        console.log(`   Status atual: ${envio.status_envio}`);
-        console.log(`   Cliente: ${envio.codcli}`);
-        console.log(`   Campanha: ${envio.campanha_id}`);
-        
-        // Buscar dados da campanha
-        const dadosCampanha = await npsAPI.getCampanhaPorId(envio.campanha_id);
-        if (!dadosCampanha) {
-          console.log(`⚠️ Campanha ${envio.campanha_id} não encontrada`);
-          continue;
-        }
-        
-        // Preparar pedido para envio
-        const pedido = {
-          id: envio.pedido_id,
-          codcli: envio.codcli,
-          celular: envio.celular,
-          nome_cliente: envio.nome_cliente || 'Cliente',
-          valor_total: envio.valor_total || 0,
-          data_pedido: envio.data_pedido,
-          instancia_id: envio.instancia_id
-        };
-        
-        // Validar número WhatsApp antes de enviar
-        console.log(`🔍 Validando número ${envio.celular} antes do envio...`);
-        
-        try {
-          const validationResponse = await axios.post(`${process.env.API_LOCAL_WHATSAPP}/api/instances/${envio.instancia_id}/validate-number`, {
-            number: envio.celular
-          });
-          
-          if (!validationResponse.data.success || !validationResponse.data.hasWhatsApp) {
-            const motivo = validationResponse.data.error || 'Número não possui conta WhatsApp';
-            console.log(`❌ Número ${envio.celular} não possui conta WhatsApp: ${motivo}`);
-            writeLog(`Número ${envio.celular} não possui conta WhatsApp - Envio ${envio.id}: ${motivo}`);
-            
-            // Atualizar status do controle para 'numero_invalido'
-            await npsAPI.atualizarControleEnvio(envio.id, {
-              status_envio: 'numero_invalido',
-              data_envio: new Date().toISOString().slice(0, 19).replace('T', ' '),
-              ultimo_erro: `Número não possui conta WhatsApp: ${motivo}`
-            });
-            
-            erros++;
-            console.log(`❌ Envio agendado ${envio.id} marcado como número inválido`);
-            continue;
-          }
-          
-          console.log(`✅ Número ${envio.celular} possui conta WhatsApp - prosseguindo`);
-          
-        } catch (validationError) {
-          console.log(`⚠️ Erro ao validar número ${envio.celular}: ${validationError.message}`);
-          console.log(`   Prosseguindo com envio (assumindo que número é válido)...`);
-          writeLog(`Erro na validação do número ${envio.celular} - Envio ${envio.id}: ${validationError.message}`);
-        }
-        
-        // Enviar mensagem NPS
-        await enviarMensagemNPSIndividual(envio.id, pedido, dadosCampanha);
-        
-        processados++;
-        console.log(`✅ Envio agendado ${envio.id} processado com sucesso`);
-        
-      } catch (error) {
-        erros++;
-        console.error(`❌ Erro ao processar envio agendado ${envio.id}: ${error.message}`);
-        writeLog(`Erro ao processar envio agendado ${envio.id}: ${error.message}`);
-      }
-    }
-    
-    console.log(`📊 Processamento de envios agendados concluído:`);
-    console.log(`   Processados: ${processados}`);
-    console.log(`   Erros: ${erros}`);
-    
-    writeLog(`Processamento de envios agendados concluído: ${processados} processados, ${erros} erros`);
-    
-  } catch (error) {
-    console.error(`❌ Erro geral no processamento de envios agendados: ${error.message}`);
-    writeLog(`Erro geral no processamento de envios agendados: ${error.message}`);
-  }
-}
+// (removida duplicata de processarEnviosAgendadosHorario)
 
 // Configurar cron jobs
 function configurarCronJobs() {
@@ -1876,6 +1933,21 @@ function configurarCronJobs() {
     cronExpression = `*/${minutos} * * * *`;
   }
   
+  // Intervalo para agendados pode ser configurado separadamente; caso contrário, usa o mesmo
+  const scheduledIntervalMs = parseInt(process.env.NPS_SCHEDULED_INTERVAL_MS) || intervalMs;
+  const scheduledIntervalSegundos = Math.round(scheduledIntervalMs / 1000);
+  const scheduledIntervalTexto = scheduledIntervalSegundos >= 60
+    ? `${Math.round(scheduledIntervalSegundos / 60)} minuto(s)`
+    : `${scheduledIntervalSegundos} segundo(s)`;
+  
+  let cronExpressionScheduled;
+  if (scheduledIntervalSegundos < 60) {
+    cronExpressionScheduled = `*/${scheduledIntervalSegundos} * * * * *`;
+  } else {
+    const minutosSched = Math.round(scheduledIntervalSegundos / 60);
+    cronExpressionScheduled = `*/${minutosSched} * * * *`;
+  }
+  
   // Verificar novos pedidos individuais com intervalo configurável
   cron.schedule(cronExpression, async () => {
     try {
@@ -1885,9 +1957,10 @@ function configurarCronJobs() {
     }
   });
   
-  // Processar envios agendados por horário a cada 30 minutos
-  cron.schedule('*/30 * * * *', async () => {
+  // Processar envios agendados por horário com intervalo configurável
+  cron.schedule(cronExpressionScheduled, async () => {
     try {
+      writeLog('⏱️  Cron (agendados): verificando pendentes...');
       await processarEnviosAgendadosHorario();
     } catch (error) {
       writeLog('Erro no cron de envios agendados por horário: ' + error.message);
@@ -1896,8 +1969,8 @@ function configurarCronJobs() {
   
   writeLog(`Cron jobs configurados:`);
   writeLog(`  - Disparo individual: a cada ${intervalTexto} (${intervalMs}ms)`);
-  writeLog(`  - Envios agendados por horário: a cada 30 minutos`);
-  writeLog('💡 Configure NPS_MONITOR_INTERVAL_MS no .env para alterar o intervalo base');
+  writeLog(`  - Envios agendados por horário: a cada ${scheduledIntervalTexto} (${scheduledIntervalMs}ms)`);
+  writeLog('💡 Configure NPS_MONITOR_INTERVAL_MS e NPS_SCHEDULED_INTERVAL_MS no .env para alterar os intervalos');
   writeLog('ℹ️ Para consolidação de estados, execute: node nps-consolidador.js --service');
 }
 
@@ -1955,7 +2028,7 @@ if (require.main === module) {
     initializeAuth()
       .then(() => {
         configurarCronJobs();
-        writeLog('🔧 Serviço NPS iniciado com cron jobs (3 segundos)');
+        writeLog('🔧 Serviço NPS iniciado com cron jobs');
         
         // Manter o processo rodando
         process.on('SIGINT', () => {
@@ -1976,12 +2049,13 @@ if (require.main === module) {
     writeLog('🔄 Executando verificação única de NPS...');
     initializeAuth()
       .then(() => processarDisparoImediato())
+      .then(() => processarEnviosAgendadosHorario())
       .then(() => {
-        writeLog('✅ Processamento NPS individual concluído com sucesso.');
+        writeLog('✅ Processamento único concluído (imediatos e agendados).');
         process.exit(0);
       })
       .catch((error) => {
-        writeLog('❌ Erro no processamento NPS individual: ' + error.message);
+        writeLog('❌ Erro no processamento único: ' + error.message);
         process.exit(1);
       });
       

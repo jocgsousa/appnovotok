@@ -187,13 +187,57 @@ class NPSSyncAPI {
         try {
             const params = new URLSearchParams();
             if (options.minutos) params.append('minutos', options.minutos);
-            if (options.filiais) params.append('filiais', options.filiais);
+            if (options.filiais) {
+                let filiaisParam = options.filiais;
+                if (Array.isArray(filiaisParam)) {
+                    filiaisParam = filiaisParam.join(',');
+                } else if (typeof filiaisParam === 'string' && filiaisParam.trim().startsWith('[')) {
+                    try {
+                        const parsed = JSON.parse(filiaisParam);
+                        if (Array.isArray(parsed)) filiaisParam = parsed.join(',');
+                    } catch (_) {
+                        // mantém string original caso não seja JSON válido
+                    }
+                }
+                params.append('filiais', filiaisParam);
+            }
             if (options.limit) params.append('limit', options.limit);
 
-            const response = await apiClient.get(`/nps_sync_api_pedidos_recentes.php?${params}`);
-            return response.data.data || [];
+            // Unificado para endpoint de pedidos_vendas
+            const response = await apiClient.get(`/nps_sync_api_pedidos_vendas_recentes.php?${params}`);
+            return response.data.pedidos || response.data.data || [];
         } catch (error) {
             throw new Error(`Erro ao buscar pedidos recentes: ${error.message}`);
+        }
+    }
+
+    /**
+     * Buscar pedidos_vendas recentes (header MySQL)
+     */
+    async getPedidosVendasRecentes(options = {}) {
+        try {
+            const params = new URLSearchParams();
+            if (options.minutos) params.append('minutos', options.minutos);
+            if (options.filiais) {
+                let filiaisParam = options.filiais;
+                if (Array.isArray(filiaisParam)) {
+                    filiaisParam = filiaisParam.join(',');
+                } else if (typeof filiaisParam === 'string' && filiaisParam.trim().startsWith('[')) {
+                    try {
+                        const parsed = JSON.parse(filiaisParam);
+                        if (Array.isArray(parsed)) filiaisParam = parsed.join(',');
+                    } catch (_) {
+                        // mantém string original caso não seja JSON válido
+                    }
+                }
+                params.append('filiais', filiaisParam);
+            }
+            if (options.limit) params.append('limit', options.limit);
+
+            const response = await apiClient.get(`/nps_sync_api_pedidos_vendas_recentes.php?${params}`);
+            return response.data.pedidos || response.data.data || [];
+        } catch (error) {
+            throw new Error(`Erro ao buscar pedidos_vendas recentes: ${error.message}`);
         }
     }
 
@@ -450,6 +494,23 @@ class NPSSyncAPI {
 }
 
 /**
+ * Cliente para API de Pedidos de Vendas (batch)
+ */
+class PedidosVendasAPI {
+    /**
+     * Registrar lote de pedidos_vendas e itens
+     */
+    async registerBatch(batchData) {
+        try {
+            const response = await apiClient.post('/pedidos_vendas_register_batch.php', batchData);
+            return response.data;
+        } catch (error) {
+            throw new Error(`Erro ao registrar lote de pedidos_vendas: ${error.message}`);
+        }
+    }
+}
+
+/**
  * Função para inicializar autenticação
  * Deve ser chamada antes de usar as APIs
  */
@@ -482,13 +543,16 @@ async function logout() {
 // Instâncias dos clientes
 const whatsappAPI = new WhatsAppInstancesAPI();
 const npsAPI = new NPSSyncAPI();
+const pedidosVendasAPI = new PedidosVendasAPI();
 
 module.exports = {
     apiClient,
     whatsappAPI,
     npsAPI,
+    pedidosVendasAPI,
     WhatsAppInstancesAPI,
     NPSSyncAPI,
+    PedidosVendasAPI,
     authManager,
     initializeAuth,
     getAuthInfo,

@@ -252,23 +252,23 @@ try {
     aplicarEstiloDados($sheet, 'A' . ($currentRow - count($dadosNPS)) . ':B' . ($currentRow - 1));
     $currentRow += 2;
     
-    // Score de Vendedores
-    $vendedorQuery = "SELECT 
-                        p.vendedor,
-                        v.nome as nome_vendedor,
-                        COUNT(DISTINCT c.id) as total_envios,
-                        COUNT(DISTINCT r.id) as total_respostas,
-                        AVG(r.nota_nps) as nota_media,
-                        SUM(CASE WHEN r.classificacao_nps = 'promotor' THEN 1 ELSE 0 END) as promotores,
-                        SUM(CASE WHEN r.classificacao_nps = 'neutro' THEN 1 ELSE 0 END) as neutros,
-                        SUM(CASE WHEN r.classificacao_nps = 'detrator' THEN 1 ELSE 0 END) as detratores
-                      FROM controle_envios_nps c
-                      INNER JOIN pedidos p ON c.pedido_id = p.pedido
-                      LEFT JOIN vendedores v ON p.vendedor = v.rca
-                      LEFT JOIN respostas_nps r ON c.id = r.controle_envio_id AND r.pergunta_id IS NULL
-                      WHERE DATE(c.data_cadastro) BETWEEN ? AND ?
-                        AND p.vendedor IS NOT NULL
-                        AND p.vendedor != ''";
+        // Score de Vendedores (migrado para pedidos_vendas)
+        $vendedorQuery = "SELECT 
+                            pv.codusur AS vendedor,
+                            COALESCE(v.nome, pv.nome) AS nome_vendedor,
+                            COUNT(DISTINCT c.id) AS total_envios,
+                            COUNT(DISTINCT r.id) AS total_respostas,
+                            AVG(r.nota_nps) AS nota_media,
+                            SUM(CASE WHEN r.classificacao_nps = 'promotor' THEN 1 ELSE 0 END) AS promotores,
+                            SUM(CASE WHEN r.classificacao_nps = 'neutro' THEN 1 ELSE 0 END) AS neutros,
+                            SUM(CASE WHEN r.classificacao_nps = 'detrator' THEN 1 ELSE 0 END) AS detratores
+                          FROM controle_envios_nps c
+                          INNER JOIN pedidos_vendas pv ON c.numero_pedido = pv.numped
+                          LEFT JOIN vendedores v ON pv.codusur = v.rca
+                          LEFT JOIN respostas_nps r ON c.id = r.controle_envio_id AND r.pergunta_id IS NULL
+                          WHERE DATE(c.data_cadastro) BETWEEN ? AND ?
+                            AND pv.codusur IS NOT NULL
+                            AND pv.codusur != ''";
     
     $vendedorParams = [$dataInicio, $dataFim];
     
@@ -282,7 +282,7 @@ try {
         $vendedorParams[] = $campanha;
     }
     
-    $vendedorQuery .= " GROUP BY p.vendedor ORDER BY AVG(r.nota_nps) DESC, COUNT(DISTINCT r.id) DESC";
+        $vendedorQuery .= " GROUP BY pv.codusur ORDER BY AVG(r.nota_nps) DESC, COUNT(DISTINCT r.id) DESC";
     
     $vendedorStmt = $db->prepare($vendedorQuery);
     $vendedorStmt->execute($vendedorParams);

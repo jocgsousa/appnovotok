@@ -143,7 +143,8 @@ try {
         $updateFields = [];
         $updateValues = [];
         
-        $allowedFields = ['status_envio', 'tentativas_envio', 'ultimo_erro', 'data_envio', 'data_inicio_conversa', 'data_fim_conversa', 'motivo_cancelamento'];
+        // Permitir atualização de data_elegivel para reagendamento
+        $allowedFields = ['status_envio', 'tentativas_envio', 'ultimo_erro', 'data_envio', 'data_inicio_conversa', 'data_fim_conversa', 'motivo_cancelamento', 'data_elegivel'];
         foreach ($allowedFields as $field) {
             if (isset($input[$field])) {
                 $updateFields[] = "$field = ?";
